@@ -106,7 +106,7 @@ const float MAG_B[3] = {{
 
     # 2. 펌웨어 프로젝트 디렉토리에 동적 경로 해석하여 다이렉트 자동 이식 저장
     imu_root = os.path.dirname(script_dir)
-    firmware_calib_dir = os.path.join(imu_root, "firmware", "main", "calibration")
+    firmware_calib_dir = os.path.join(imu_root, "firmware", "calibrated", "calibration")
     if not os.path.exists(firmware_calib_dir):
         os.makedirs(firmware_calib_dir)
         
