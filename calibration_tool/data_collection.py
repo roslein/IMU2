@@ -11,10 +11,16 @@ import struct
 import time
 import sys
 import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 PACKET_SIZE = 39
 START_BYTE = 0xAA
 END_BYTE = 0x55
+
+# 🎯 3D Matplotlib 창 및 플롯 관리를 위한 전역 변수
+fig = None
+ax = None
 
 def find_arduino_port():
     ports = serial.tools.list_ports.comports()
@@ -24,6 +30,71 @@ def find_arduino_port():
     if ports:
         return ports[0].device
     return None
+
+def init_3d_plot(normals):
+    """
+    3D Matplotlib 창을 초기화하고 정20면체 법선 벡터 위치 및 면 번호를 3D 공간에 가상 드로잉합니다.
+    """
+    global fig, ax
+    plt.ion()  # 대화형 모드 활성화
+    fig = plt.figure(figsize=(8, 7))
+    ax = fig.add_subplot(111, projection='3d')
+    plt.show()
+
+def update_3d_plot(collected_data, normals, new_point=None, new_matched_idx=None):
+    """
+    3D 공간 상에 이미 수집된 벡터(Green), 미수집 법선(Red), 신규 측정 후보 벡터(Yellow)를 맵핑합니다.
+    """
+    global fig, ax
+    if fig is None or ax is None:
+        return
+        
+    ax.clear()
+    
+    # 1. 3D 구면 그리드 (Sphere Wireframe) 시각화
+    u = np.linspace(0, 2 * np.pi, 20)
+    v = np.linspace(0, np.pi, 10)
+    x = np.outer(np.cos(u), np.sin(v))
+    y = np.outer(np.sin(u), np.sin(v))
+    z = np.outer(np.ones(np.size(u)), np.cos(v))
+    ax.plot_wireframe(x, y, z, color='lightgray', alpha=0.3, linewidth=0.5)
+    
+    # 2. 20개 정20면체 법선 벡터 그리기
+    for idx, n in enumerate(normals):
+        if idx in collected_data:
+            ax.scatter(n[0], n[1], n[2], color='green', s=100, marker='o', label='Collected' if idx == 0 else "")
+            ax.text(n[0] * 1.15, n[1] * 1.15, n[2] * 1.15, f"#{idx:02d} (G)", color='darkgreen', fontsize=9, weight='bold')
+            ax.plot([0, n[0]], [0, n[1]], [0, n[2]], color='green', alpha=0.5, linewidth=1.5)
+        else:
+            ax.scatter(n[0], n[1], n[2], color='red', s=60, marker='x', label='Uncollected' if idx == 0 else "")
+            ax.text(n[0] * 1.15, n[1] * 1.15, n[2] * 1.15, f"#{idx:02d}", color='darkred', fontsize=9)
+            ax.plot([0, n[0]], [0, n[1]], [0, n[2]], color='red', alpha=0.3, linestyle='--', linewidth=1.0)
+            
+    # 3. 새로운 포인트 후보 시각화 (중력 가속도 부호 반전하여 구면에 정합)
+    if new_point is not None:
+        norm_val = np.linalg.norm(new_point)
+        if norm_val > 1e-3:
+            new_unit = - (new_point / norm_val)
+            ax.scatter(new_unit[0], new_unit[1], new_unit[2], color='gold', s=180, marker='*', edgecolors='black', linewidths=1.0, label='New Position')
+            ax.plot([0, new_unit[0]], [0, new_unit[1]], [0, new_unit[2]], color='gold', linewidth=3.0)
+            
+            if new_matched_idx is not None:
+                n_target = normals[new_matched_idx]
+                ax.plot([new_unit[0], n_target[0]], [new_unit[1], n_target[1]], [new_unit[2], n_target[2]], color='orange', linestyle=':', linewidth=2.0)
+                
+    ax.set_title("📌 IMU 20-Position Calibration Guide View (3D)")
+    ax.set_xlabel("X-Axis")
+    ax.set_ylabel("Y-Axis")
+    ax.set_zlabel("Z-Axis")
+    ax.grid(True)
+    
+    # 범례 설정
+    handles, labels = ax.get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    ax.legend(by_label.values(), by_label.keys(), loc='upper left')
+    
+    plt.draw()
+    plt.pause(0.01)
 
 def get_latest_sample(ser):
     """
@@ -170,6 +241,10 @@ def main():
     import icosahedron
     normals = icosahedron.get_icosahedron_normals()
     
+    # 🎯 3D 뷰어 창 초기화
+    init_3d_plot(normals)
+    update_3d_plot(collected_data, normals)
+    
     print("\n💡 정20면체의 각 20개 면을 수평 바닥에 정적으로 안착시킨 후 수집을 시작합니다.")
     print("중복/순서 상관없이 총 20개의 서로 다른 면을 한 번씩 바닥에 수평 안착시키십시오.\n")
     
@@ -185,6 +260,7 @@ def main():
             # 실시간 프리뷰 루프
             ser.reset_input_buffer()
             import msvcrt
+            last_plot_time = 0
             while True:
                 acc_raw, mag_raw = get_latest_sample(ser)
                 if acc_raw is not None:
@@ -198,32 +274,56 @@ def main():
                         
                     sys.stdout.write(f"\r📡 실시간 프리뷰 ➔ {status_str} | 일치율: {match_percent:.1f}%")
                     sys.stdout.flush()
+                    
+                    # 3D 뷰어 5Hz 갱신
+                    if time.time() - last_plot_time > 0.15:
+                        update_3d_plot(collected_data, normals, new_point=acc_raw, new_matched_idx=best_idx)
+                        last_plot_time = time.time()
+                
+                # Matplotlib GUI 스레드 활성화 (회전 및 제어 지원)
+                plt.pause(0.01)
                 
                 if msvcrt.kbhit():
                     key = msvcrt.getch()
                     if key in [b'\r', b' ', b'\n']: # Enter or Space
                         print("\n\n🚀 [트리거 감지] 정밀 3초 수집 기동!")
                         break
-                time.sleep(0.05)
+                time.sleep(0.01)
                 
             # 안정화 딜레이
             time.sleep(0.5)
             
             mean_acc, mean_gyro, mean_mag = collect_static_samples(ser, sample_count=300)
             
-            # 🎯 실시간 정20면체 기하 NN 매칭 검증 피드백 주입
+            # 🎯 획득된 정밀 평균 데이터 기준으로 3D 가이드 업데이트
             best_idx, res = icosahedron.match_face(mean_acc, normals)
             match_percent = (1.0 - res) * 100.0
+            update_3d_plot(collected_data, normals, new_point=mean_acc, new_matched_idx=best_idx)
             
             print(f"   ↳ ⚖️ [평균 획득] Acc: [{mean_acc[0]:.1f}, {mean_acc[1]:.1f}, {mean_acc[2]:.1f}] | Mag: [{mean_mag[0]:.1f}, {mean_mag[1]:.1f}, {mean_mag[2]:.1f}]")
-            print(f"   ↳ 🎯 [기하 매칭] 최종 자세 ➔ 정20면체 법선 #{best_idx:02d} 매칭됨 (일치율: {match_percent:.2f}%)")
+            print(f"   ↳ 🎯 [기하 매칭] 자동 판정 ➔ 정20면체 법선 #{best_idx:02d} 매칭됨 (일치율: {match_percent:.2f}%)")
             
-            if best_idx in collected_data:
-                print(f"   ⚠️ [경고] 최종 수집 결과가 이미 완료된 면(Face #{best_idx:02d})으로 유입되었습니다! 다른 면으로 다시 시도하십시오.")
+            # 🎯 수동 수치 보정 및 검증 입력 주입
+            print("   ❔ [수동 보정] 3D 구면 안내도를 보시고 자동 판정이 올바른지 검증하십시오.")
+            override_input = input(f"       * 매칭이 올바르면 [Enter], 왜곡되어 틀릴 시 올바른 면 번호(0-19)를 직접 입력하십시오: ").strip()
+            
+            final_idx = best_idx
+            if override_input.isdigit():
+                val = int(override_input)
+                if 0 <= val <= 19:
+                    final_idx = val
+                    print(f"       ➔ 🛠 [수동 보정 적용] Face #{final_idx:02d} 번으로 변경 등록합니다.")
+                else:
+                    print(f"       ⚠️ [범위 초과] 0~19 외의 값이므로 자동 판정값(#{best_idx:02d})으로 등록합니다.")
+            
+            if final_idx in collected_data:
+                print(f"   ⚠️ [경고] 등록하려는 면(Face #{final_idx:02d})은 이미 수집 완료된 상태입니다! 다른 면으로 다시 시도하십시오.")
             else:
-                collected_data[best_idx] = (mean_acc, mean_mag)
-                print(f"   ✅ [수집 성공] Face #{best_idx:02d} 데이터로 등록 완료!")
+                collected_data[final_idx] = (mean_acc, mean_mag)
+                print(f"   ✅ [수집 성공] Face #{final_idx:02d} 데이터로 등록 완료!")
                 
+            # 최종 수집 및 갱신 완료 후 3D 플롯 다시 갱신
+            update_3d_plot(collected_data, normals)
             print("-" * 60)
             
         # 수집 완료 후 인덱스 순서(0~19)대로 정렬 정렬하여 디스크 저장 (백업용)
