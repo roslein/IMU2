@@ -1,0 +1,20 @@
+# Python 가상환경 및 캐시
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE 설정 및 OS 임시 파일
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 아두이노/C++ 컴파일 및 빌드 결과물
+/build/
+*.bin
+*.elf
+*.hex
+*.o
+*.d
