@@ -253,8 +253,10 @@ def main():
                     faces = data['faces']
                     acc_data = data['acc']
                     mag_data = data['mag']
+                    gyro_data = data['gyro'] if 'gyro' in data else None
                     for idx, f in enumerate(faces):
-                        collected_data[int(f)] = (acc_data[idx], mag_data[idx])
+                        g_val = gyro_data[idx] if gyro_data is not None else np.zeros(3)
+                        collected_data[int(f)] = (acc_data[idx], mag_data[idx], g_val)
                 print(f"   ✅ [복원 성공] 총 {len(collected_data)}개 면 데이터를 이어서 시작합니다!")
             except Exception as e:
                 print(f"   ⚠️ [복원 실패] 임시 데이터 로드 중 오류: {e}. 새로 수집을 개시합니다.")
@@ -343,7 +345,7 @@ def main():
             if final_idx in collected_data:
                 print(f"   ⚠️ [경고] 등록하려는 면(Face #{final_idx:02d})은 이미 수집 완료된 상태입니다! 다른 면으로 다시 시도하십시오.")
             else:
-                collected_data[final_idx] = (mean_acc, mean_mag)
+                collected_data[final_idx] = (mean_acc, mean_mag, mean_gyro)
                 print(f"   ✅ [수집 성공] Face #{final_idx:02d} 데이터로 등록 완료!")
                 
                 # 🎯 실시간 임시 체크포인트 백업
@@ -351,10 +353,12 @@ def main():
                     faces_to_save = list(collected_data.keys())
                     acc_to_save = [collected_data[f][0] for f in faces_to_save]
                     mag_to_save = [collected_data[f][1] for f in faces_to_save]
+                    gyro_to_save = [collected_data[f][2] for f in faces_to_save]
                     np.savez(checkpoint_path, 
                              faces=np.array(faces_to_save), 
                              acc=np.array(acc_to_save), 
-                             mag=np.array(mag_to_save))
+                             mag=np.array(mag_to_save),
+                             gyro=np.array(gyro_to_save))
                 except Exception as e:
                     print(f"   ⚠️ [체크포인트 실시간 백업 실패]: {e}")
                 
@@ -365,15 +369,18 @@ def main():
         # 수집 완료 후 인덱스 순서(0~19)대로 정렬 정렬하여 디스크 저장 (백업용)
         acc_samples = []
         mag_samples = []
+        gyro_samples = []
         for i in range(20):
             acc_samples.append(collected_data[i][0])
             mag_samples.append(collected_data[i][1])
+            gyro_samples.append(collected_data[i][2])
             
         acc_samples = np.array(acc_samples)
         mag_samples = np.array(mag_samples)
+        gyro_samples = np.array(gyro_samples)
         
         final_save_path = os.path.join(output_dir, "collected_data.npz")
-        np.savez(final_save_path, acc=acc_samples, mag=mag_samples)
+        np.savez(final_save_path, acc=acc_samples, mag=mag_samples, gyro=gyro_samples)
         print("\n🎉 [대성공] 20개 포지션 데이터 수집이 완전히 끝났습니다!")
         print(f"📁 수집본 저장 완료: {final_save_path}\n")
         
