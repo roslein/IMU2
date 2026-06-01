@@ -27,8 +27,9 @@ def main():
     print("=" * 60)
     
     # 1. 데이터 로드 및 데모 모드 스위칭
-    data_path = "calibration_tool/collected_data.npz"
-    acc_param_path = "calibration_tool/acc_params.npz"
+    imu_root = os.path.dirname(SCRIPT_DIR)
+    data_path = os.path.join(imu_root, "calibration_tool", "output", "collected_data.npz")
+    acc_param_path = os.path.join(imu_root, "calibration_tool", "output", "acc_params.npz")
     
     if not os.path.exists(data_path):
         print("⚠️ 실측 수집 데이터(.npz)를 감지하지 못했습니다.")
@@ -192,7 +193,7 @@ def main():
     plt.tight_layout()
     
     # 이미지 파일 저장
-    output_filename = "verification_tool/test_phase2_result.png"
+    output_filename = os.path.join(SCRIPT_DIR, "test_phase2_result.png")
     plt.savefig(output_filename, dpi=300)
     print(f"\n🎉 [시각화 성공] 3D 구면 대조 분석 플롯이 안전하게 저장되었습니다!")
     print(f"   ↳ 저장 위치: {output_filename}")
