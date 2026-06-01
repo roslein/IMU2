@@ -90,14 +90,18 @@ void setup() {
   // En_prd_set (bit 3) = 1 (주기적 Set/Reset 구동 활성화)
   // Freq_prd_set (bits 2-0) = 001b (샘플링마다 주기 설정)
   writeRegister(0x30, 0x09, 0x2A); // 0x30 (MMC5983MA I2C 주소), 0x09 (Internal Control 0), 0x2A (Auto_SR | Period_Set)
+
+  // 100Hz 연속 측정 모드 설정 (Busy-wait 대기 제거)
+  myMag.setContinuousModeFrequency(100);
+  myMag.enableContinuousMode();
 }
 
 void loop() {
   unsigned long currentMillis = millis();
 
-  // 100Hz ODR 스케줄링 동기화
+  // 100Hz ODR 스케줄링 동기화 (누적 오차 제거)
   if (currentMillis - lastUpdate >= intervalMs) {
-    lastUpdate = currentMillis;
+    lastUpdate += intervalMs;
 
     // 1. 센서 칩 상태 체크 및 raw 버퍼 로드
     myISM.checkStatus();
@@ -105,7 +109,7 @@ void loop() {
     myISM.getGyro(&gyroData);
 
     uint32_t rawMx, rawMy, rawMz;
-    myMag.getMeasurementXYZ(&rawMx, &rawMy, &rawMz);
+    myMag.readFieldsXYZ(&rawMx, &rawMy, &rawMz);
 
     // 2. 물리 단위 환산 및 축 위상 반전 (Preprocessing & HAL)
     

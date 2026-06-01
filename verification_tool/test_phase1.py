@@ -61,9 +61,19 @@ def main():
     try:
         while True:
             # 1. 시리얼 포트에서 사용 가능한 바이트 전체 읽기
-            if ser.in_waiting > 0:
-                data = ser.read(ser.in_waiting)
-                byte_buffer.extend(data)
+            try:
+                in_waiting = ser.in_waiting
+            except (serial.SerialException, OSError) as e:
+                print(f"\n❌ 시리얼 포트 에러 (장치 연결 유실): {e}")
+                break
+
+            if in_waiting > 0:
+                try:
+                    data = ser.read(in_waiting)
+                    byte_buffer.extend(data)
+                except (serial.SerialException, OSError) as e:
+                    print(f"\n❌ 데이터 읽기 실패 (장치 분리됨): {e}")
+                    break
                 
             # 2. 버퍼 내에 패킷 규격 이상의 데이터가 쌓여 있을 때 슬라이딩 윈도우 파싱
             while len(byte_buffer) >= PACKET_SIZE:
@@ -84,7 +94,7 @@ def main():
                     
                 # 3. XOR 체크섬 유효성 검증
                 xor_sum = START_BYTE
-                for b in packet[1:37]: // float 9개 (36바이트) 데이터 영역 XOR
+                for b in packet[1:37]: # float 9개 (36바이트) 데이터 영역 XOR
                     xor_sum ^= b
                     
                 checksum_in_packet = packet[37]
@@ -110,9 +120,9 @@ def main():
                 elapsed = time.time() - start_time
                 fps = packet_count / elapsed if elapsed > 0 else 0
                 
-                # 화면 깜빡임 최소화를 위해 캐리지 리턴(\r) 형식으로 덮어쓰기 출력
+                # \r\033[K : 캐리지 리턴 후 현재 행 끝까지 완벽 클리어하여 덮어쓰기 뭉개짐 방지
                 sys.stdout.write(
-                    f"\r[FPS: {fps:5.1f}Hz] "
+                    f"\r\033[K[FPS: {fps:5.1f}Hz] "
                     f"Acc(raw): {ax:8.1f}, {ay:8.1f}, {az:8.1f} | "
                     f"Gyro(rad): {gx:6.3f}, {gy:6.3f}, {gz:6.3f} | "
                     f"Mag(cnt): {mx:7.1f}, {my:7.1f}, {mz:7.1f} | "
@@ -123,7 +133,7 @@ def main():
                 # 처리한 패킷만큼 버퍼에서 비우기
                 byte_buffer = byte_buffer[PACKET_SIZE:]
                 
-            time.sleep(0.001) // CPU 과부하 방지용 짧은 휴식
+            time.sleep(0.001) # CPU 과부하 방지용 짧은 휴식
             
     except KeyboardInterrupt:
         print("\n\n🛑 사용자에 의해 테스트 스크립트 동작이 강제 종료되었습니다.")
