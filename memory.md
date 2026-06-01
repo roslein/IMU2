@@ -11,7 +11,26 @@
 ---
 
 ## 📌 [MISTAKE] 디버깅 및 에러 기록
-*(실물 센서 데이터 획득 단계 시 에러 로깅 예정)*
+
+*   **ID**: MISTAKE-IMU-02
+*   **유형**: [MISTAKE]
+*   **내용**: CAD ideal 법선 기반 NN 매칭 가동 시 중앙 센서 30도 비틀림 마운팅 오차에 따른 기하학적 데드존 병목 발생. SVD Kabsch 알고리즘을 가동하여 마운팅 오일러각(Yaw=-160.64, Pitch=-29.79, Roll=-20.40)을 역산하고 get_rotated_normals() 로 ideal 법선들을 사전 회전 정합시켜 오차 꼬임을 완벽 분리 상쇄해야 함.
+
+*   **ID**: MISTAKE-IMU-03
+*   **유형**: [MISTAKE]
+*   **내용**: 16번 케이블 인출면 안착 시 점퍼선 장력 요동으로 I2C 통신 버스 하드웨어 락업 및 0.0 고착 예외로 Matplotlib 강제 튕김 발생. 0.0 고착 체크 전단 탑재 및 calibration_tool/output/checkpoint_data.npz 에 실시간 이어받기(Resume) 오토세이브 임시 체크포인트를 상설 탑재하여 유실을 원천 방지해야 함.
+
+*   **ID**: CONCEPT-IMU-02
+*   **유형**: [깨달음]
+*   **내용**: I2C 복구용 USB 물리 리셋 탈부착 시 케이블 곡률 변화에 따른 유도 전류 자기장 시프팅 및 차단/인가 과도기 전류 서지에 의한 금속 강자성 브리지 내 잔류 자화 격차 유입으로 자력계 16번 데이터만 독자 아웃라이어(Outlier) Shifting 튕김 발생 주의.
+
+*   **ID**: CONCEPT-IMU-03
+*   **유형**: [깨달음]
+*   **내용**: 실물 실험의 케이블 들뜸 및 전원 자성 요동 재발 방지를 위해, 19개 골드 데이터만 선택 사용(대안 1)하거나 1차 가평가 피팅 후 3배 표준편차 특이점을 솔버가 스스로 마스킹 소거하는 Robust Outlier Rejection 메커니즘 내장(대안 2)을 교수님과 연계 검토할 것.
+
+*   **ID**: CHRONIC-IMU-03
+*   **유형**: [CHRONIC]
+*   **내용**: 재보정 안전 아키텍처(raw.ino 와 calibrated.ino) 물리 이원화 후, 자동 제너레이션되는 calib_params.h 경로를 반드시 EKF 프로젝트 디렉토리인 firmware/calibrated/calibration 에 덮어쓰도록 툴체인 정합성을 상시 유지해야 함. (main/calibration 으로 오이송 누락 에러 주의)
 
 ---
 
