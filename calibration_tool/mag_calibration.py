@@ -91,7 +91,9 @@ const float MAG_B[3] = {{
 
 #endif // _CALIB_PARAMS_H_
 """
-    output_dir = "calibration_tool/output"
+    # 1. 툴 폴더 내부의 output 디렉토리에 로컬 백업 저장
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    output_dir = os.path.join(script_dir, "output")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         
@@ -99,17 +101,34 @@ const float MAG_B[3] = {{
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(header_content)
         
-    print(f"\n📂 [헤더 발행 성공] C++ 펌웨어용 파라미터 헤더 파일이 빌드되었습니다!")
+    print(f"\n📂 [툴 폴더 백업 성공] calib_params.h 가 로컬 백업되었습니다.")
     print(f"   ↳ 경로: {output_path}")
+
+    # 2. 펌웨어 프로젝트 디렉토리에 동적 경로 해석하여 다이렉트 자동 이식 저장
+    imu_root = os.path.dirname(script_dir)
+    firmware_calib_dir = os.path.join(imu_root, "firmware", "main", "calibration")
+    if not os.path.exists(firmware_calib_dir):
+        os.makedirs(firmware_calib_dir)
+        
+    firmware_output_path = os.path.join(firmware_calib_dir, "calib_params.h")
+    with open(firmware_output_path, "w", encoding="utf-8") as f:
+        f.write(header_content)
+        
+    print(f"🚀 [펌웨어 자동 이식 성공] C++ 헤더가 실시간으로 펌웨어 프로젝트에 다이렉트 갱신되었습니다!")
+    print(f"   ↳ 경로: {firmware_output_path}")
 
 def main():
     print("=" * 60)
     print(" 🎯 Phase 2 Magnetometer Ellipsoid Fitting Solver")
     print("=" * 60)
     
+    # 스크립트 실행 디렉토리 기준 절대 경로 확보
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_path = os.path.join(script_dir, "output", "collected_data.npz")
+    
     # 데이터 로드
     try:
-        data = np.load("calibration_tool/collected_data.npz")
+        data = np.load(data_path)
         mag_raw = data["mag"]
         print(f"📂 실측 데이터 세트 로드 완료 (Shape: {mag_raw.shape})")
     except Exception as e:
@@ -146,8 +165,9 @@ def main():
     print("=" * 60)
     
     # 가속도 보정 데이터도 있는지 확인 후 헤더파일 일괄 빌드
-    if os.path.exists("calibration_tool/acc_params.npz"):
-        acc_data = np.load("calibration_tool/acc_params.npz")
+    acc_param_path = os.path.join(script_dir, "output", "acc_params.npz")
+    if os.path.exists(acc_param_path):
+        acc_data = np.load(acc_param_path)
         W_acc = acc_data["W"]
         b_acc = acc_data["b"]
         generate_cpp_header(W_acc, b_acc, W_mag, b_mag)

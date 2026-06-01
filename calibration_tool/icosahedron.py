@@ -73,14 +73,37 @@ def match_face(g_meas, normals):
     
     return best_idx, residual
 
+def get_jig_to_sensor_rotation():
+    """
+    sensor_20_v1.stl 기하 모델 분석 및 실측 SVD Kabsch 매칭을 통해 도출된
+    정20면체 지그 좌표계에서 센서 좌표계로의 최적 마운팅 회전 행렬(R_mount.T)을 반환합니다.
+    오일러각 (Z-Y-X): Z=-160.64°, Y=-29.79°, X=-20.40° (디자인 30도 Pitch 틸트 정밀 반영)
+    """
+    R_mount = np.array([
+        [-0.81882323,  0.28767469, -0.49676129],
+        [-0.47402805, -0.82692424,  0.30247928],
+        [-0.32376832,  0.48315585,  0.81347065]
+    ])
+    # 지그(Jig) -> 센서(Sensor)로의 회전이므로 R_mount.T 반환
+    return R_mount.T
+
+def get_rotated_normals():
+    """
+    지그의 ideal 법선 벡터(20x3)를 최적 마운팅 회전 행렬(R_mount.T)로 회전시켜
+    센서 좌표계 기준의 ideal 법선 벡터(20x3)를 반환합니다.
+    """
+    normals = get_icosahedron_normals()
+    R_jig_to_sensor = get_jig_to_sensor_rotation()
+    return (R_jig_to_sensor @ normals.T).T
+
 if __name__ == "__main__":
     # 테스트 구동
     normals = get_icosahedron_normals()
-    print(f" 정20면체 법선 벡터 추출 완료! (Shape: {normals.shape})")
-    for idx, norm in enumerate(normals):
-        print(f"Face #{idx:02d}: [{norm[0]:6.3f}, {norm[1]:6.3f}, {norm[2]:6.3f}]")
+    rot_normals = get_rotated_normals()
+    print(f" 정20면체 지그 ideal 법선 벡터 추출 완료! (Shape: {normals.shape})")
+    print(f" 정20면체 센서 기준 회전 법선 벡터 추출 완료! (Shape: {rot_normals.shape})")
     
-    # 테스트 매칭
+    # icosahedron.py 하단 테스트 메인 블록 검증 (가상 테스트 데이터 대치 매칭)
     test_g = np.array([0.1, 0.2, -0.95])
-    idx, res = match_face(test_g, normals)
-    print(f"\n🔍 테스트 매칭 결과 ➔ Best Face Index: #{idx}, Cos Residual: {res:.6f}")
+    idx, res = match_face(test_g, rot_normals)
+    print(f"\n🔍 센서 좌표계 가상 테스트 매칭 결과 ➔ Best Face Index: #{idx}, Cos Residual: {res:.6f}")

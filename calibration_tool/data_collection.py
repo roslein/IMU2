@@ -10,6 +10,7 @@ import serial.tools.list_ports
 import struct
 import time
 import sys
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -237,9 +238,32 @@ def main():
         
     collected_data = {}  # face_idx -> (mean_acc, mean_mag)
     
-    # 🎯 정20면체 법선 및 매칭 엔진 사전 로드
+    # 🎯 실시간 임시 체크포인트 자동 복원 메커니즘
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    output_dir = os.path.join(script_dir, "output")
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    checkpoint_path = os.path.join(output_dir, "checkpoint_data.npz")
+    if os.path.exists(checkpoint_path):
+        print("\n⚠️ [임시 복원 데이터 감지] 이전에 수집 중이던 데이터가 파일로 보존되어 있습니다.")
+        ans = input("   👉 기존 데이터를 이어서 수집하시겠습니까? (Y/N): ").strip().lower()
+        if ans in ['', 'y', 'yes']:
+            try:
+                with np.load(checkpoint_path) as data:
+                    faces = data['faces']
+                    acc_data = data['acc']
+                    mag_data = data['mag']
+                    for idx, f in enumerate(faces):
+                        collected_data[int(f)] = (acc_data[idx], mag_data[idx])
+                print(f"   ✅ [복원 성공] 총 {len(collected_data)}개 면 데이터를 이어서 시작합니다!")
+            except Exception as e:
+                print(f"   ⚠️ [복원 실패] 임시 데이터 로드 중 오류: {e}. 새로 수집을 개시합니다.")
+        else:
+            print("   ➔ 임시 데이터를 무시하고 새로 수집을 개시합니다.")
+            
+    # 🎯 정20면체 센서 기준 회전 법선 사전 로드
     import icosahedron
-    normals = icosahedron.get_icosahedron_normals()
+    normals = icosahedron.get_rotated_normals()
     
     # 🎯 3D 뷰어 창 초기화
     init_3d_plot(normals)
@@ -322,6 +346,18 @@ def main():
                 collected_data[final_idx] = (mean_acc, mean_mag)
                 print(f"   ✅ [수집 성공] Face #{final_idx:02d} 데이터로 등록 완료!")
                 
+                # 🎯 실시간 임시 체크포인트 백업
+                try:
+                    faces_to_save = list(collected_data.keys())
+                    acc_to_save = [collected_data[f][0] for f in faces_to_save]
+                    mag_to_save = [collected_data[f][1] for f in faces_to_save]
+                    np.savez(checkpoint_path, 
+                             faces=np.array(faces_to_save), 
+                             acc=np.array(acc_to_save), 
+                             mag=np.array(mag_to_save))
+                except Exception as e:
+                    print(f"   ⚠️ [체크포인트 실시간 백업 실패]: {e}")
+                
             # 최종 수집 및 갱신 완료 후 3D 플롯 다시 갱신
             update_3d_plot(collected_data, normals)
             print("-" * 60)
@@ -336,9 +372,17 @@ def main():
         acc_samples = np.array(acc_samples)
         mag_samples = np.array(mag_samples)
         
-        np.savez("calibration_tool/collected_data.npz", acc=acc_samples, mag=mag_samples)
+        final_save_path = os.path.join(output_dir, "collected_data.npz")
+        np.savez(final_save_path, acc=acc_samples, mag=mag_samples)
         print("\n🎉 [대성공] 20개 포지션 데이터 수집이 완전히 끝났습니다!")
-        print("📁 수집본 저장 완료: calibration_tool/collected_data.npz\n")
+        print(f"📁 수집본 저장 완료: {final_save_path}\n")
+        
+        # 🎯 완수 후 임시 체크포인트 자동 제거
+        if os.path.exists(checkpoint_path):
+            try:
+                os.remove(checkpoint_path)
+            except Exception:
+                pass
         
     except KeyboardInterrupt:
         print("\n\n🛑 사용자에 의해 데이터 수집 과정이 강제 중지되었습니다.")

@@ -7,6 +7,7 @@ Real-world IMU Phase 2 Accelerometer Calibration (accel_calibration.py)
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R_scipy
+import os
 import icosahedron
 
 def calibrate_acc_12param_icosahedron(d, normals, max_iter=50):
@@ -90,9 +91,13 @@ def main():
     print(" 🎯 Phase 2 Accelerometer 12-Parameter Calibration Solver")
     print("=" * 60)
     
+    # 스크립트 실행 디렉토리 기준 절대 경로 확보
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    data_path = os.path.join(script_dir, "output", "collected_data.npz")
+    
     # 데이터 로드
     try:
-        data = np.load("calibration_tool/collected_data.npz")
+        data = np.load(data_path)
         acc_raw = data["acc"]
         print(f"📂 실측 데이터 세트 로드 완료 (Shape: {acc_raw.shape})")
     except Exception as e:
@@ -100,7 +105,7 @@ def main():
         print("data_collection.py를 먼저 가동하여 raw 데이터를 수집하십시오.")
         return
         
-    normals = icosahedron.get_icosahedron_normals()
+    normals = icosahedron.get_rotated_normals()
     
     # 캘리브레이션 솔버 실행
     W, b, alpha, beta = calibrate_acc_12param_icosahedron(acc_raw, normals)
@@ -128,8 +133,10 @@ def main():
     print(b)
     print("=" * 60)
     
-    # 향후 헤더파일 생성을 위해 별도 임시 파일에 파라미터 저장
-    np.savez("calibration_tool/acc_params.npz", W=W, b=b)
+    # 향후 헤더파일 생성을 위해 별도 임시 파일에 파라미터 및 마운팅 회전행렬 저장
+    R_mount = icosahedron.get_jig_to_sensor_rotation().T
+    param_path = os.path.join(script_dir, "output", "acc_params.npz")
+    np.savez(param_path, W=W, b=b, R_mount=R_mount)
 
 if __name__ == "__main__":
     main()
