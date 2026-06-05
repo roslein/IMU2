@@ -123,9 +123,9 @@ def main():
                 # \r\033[K : 캐리지 리턴 후 현재 행 끝까지 완벽 클리어하여 덮어쓰기 뭉개짐 방지
                 sys.stdout.write(
                     f"\r\033[K[FPS: {fps:5.1f}Hz] "
-                    f"Acc(raw): {ax:8.1f}, {ay:8.1f}, {az:8.1f} | "
-                    f"Gyro(rad): {gx:6.3f}, {gy:6.3f}, {gz:6.3f} | "
-                    f"Mag(cnt): {mx:7.1f}, {my:7.1f}, {mz:7.1f} | "
+                    f"Acc: {ax:9.4f}, {ay:9.4f}, {az:9.4f} | "
+                    f"Gyro(rad): {gx:7.4f}, {gy:7.4f}, {gz:7.4f} | "
+                    f"Mag: {mx:9.4f}, {my:9.4f}, {mz:9.4f} | "
                     f"Err: {checksum_errors}"
                 )
                 sys.stdout.flush()

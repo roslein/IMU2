@@ -44,7 +44,7 @@
 1. 펌웨어 업로드: firmware/raw/raw.ino 를 보드에 빌드 업로드하여 순수 LSB 무가공 원시 데이터 송출 환경을 구축합니다. (전압 3.3V 결선 및 COM 포트 점유 충돌 주의)
 2. 실측 데이터 수집: calibration_tool/data_collection.py 를 실행하여 20면체 지그를 바닥에 안착시키며 엔터 트리거를 통해 3초 평균 raw 데이터 20개 포지션을 전수 수집 및 calibration_tool/output/collected_data.npz 에 저장합니다.
 3. 가속도계 12-parameter 교정: calibration_tool/accel_calibration.py 를 기동하여 지면 경사각을 Recursive하게 보상 수렴한 최적 acc_params.npz 파라미터를 역산 저장합니다.
-4. 자력계 9-parameter 교정 및 헤더 자동 빌드: calibration_tool/mag_calibration.py 를 기동하여 타원체 피팅 솔버를 Levenberg-Marquardt 연산한 뒤, 최종 C++ calib_params.h 보정 상수를 빌드하여 EKF 트래킹 펌웨어 전용 경로인 firmware/calibrated/calibration/calib_params.h 로 실시간 덮어쓰기 자동 이식을 수행합니다.
+4. 자력계 Hard iron and soft iron 교정 및 헤더 자동 빌드: calibration_tool/mag_calibration.py 를 기동하여 타원체 피팅 솔버를 Levenberg-Marquardt 연산한 뒤, 최종 C++ calib_params.h 보정 상수를 빌드하여 EKF 트래킹 펌웨어 전용 경로인 firmware/calibrated/calibration/calib_params.h 로 실시간 덮어쓰기 자동 이식을 수행합니다.
 
 ### 2) 2단계: 보정 펌웨어 탑재 및 3D 정적 자세 추정 (Orientation Tracking)
 1. EKF 보정 펌웨어 업로드: firmware/calibrated/calibrated.ino 를 보드에 업로드합니다. calib_params.h 상수가 매 순간(100Hz) 곱해져서 뿜어 나오는 최종 정합 보정 바이너리 스트리밍 텔레메트리가 실시간 기동됩니다.

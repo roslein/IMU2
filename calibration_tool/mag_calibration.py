@@ -8,6 +8,11 @@ Real-world IMU Phase 2 Magnetometer Calibration (mag_calibration.py)
 import numpy as np
 from scipy.optimize import least_squares
 import os
+import sys
+
+# Windows CP949 콘솔 이모지 인코딩 충돌 방지 강제 설정
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
 
 def calibrate_mag_ellipsoid(mag_raw):
     """
@@ -53,69 +58,7 @@ def calibrate_mag_ellipsoid(mag_raw):
     
     return W_est, b_est
 
-def generate_cpp_header(acc_W, acc_b, mag_W, mag_b):
-    """
-    보정 완료된 12-parameter 가속도 및 9-parameter 자력계 파라미터를 
-    펌웨어 프로젝트용 calib_params.h 헤더 파일로 컴파일 출력합니다.
-    """
-    header_content = f"""/*
- * Real-world IMU Auto-Generated Calibration Parameters (calib_params.h)
- * 생성일: 2026-06-01
- * 본 헤더파일을 복사하여 firmware/calibration/calib_params.h 경로에 이식하십시오.
- */
 
-#ifndef _CALIB_PARAMS_H_
-#define _CALIB_PARAMS_H_
-
-// 1. 가속도계 12-Parameter 보정용 대수 정합 변수
-const float ACC_W[3][3] = {{
-  {{ {acc_W[0,0]:12.8f}f, {acc_W[0,1]:12.8f}f, {acc_W[0,2]:12.8f}f }},
-  {{ {acc_W[1,0]:12.8f}f, {acc_W[1,1]:12.8f}f, {acc_W[1,2]:12.8f}f }},
-  {{ {acc_W[2,0]:12.8f}f, {acc_W[2,1]:12.8f}f, {acc_W[2,2]:12.8f}f }}
-}};
-
-const float ACC_B[3] = {{
-  {acc_b[0]:12.8f}f, {acc_b[1]:12.8f}f, {acc_b[2]:12.8f}f
-}};
-
-// 2. 자력계 9-Parameter 타원체 피팅(Soft/Hard Iron) 보정용 대수 정합 변수
-const float MAG_W[3][3] = {{
-  {{ {mag_W[0,0]:12.8f}f, {mag_W[0,1]:12.8f}f, {mag_W[0,2]:12.8f}f }},
-  {{ {mag_W[1,0]:12.8f}f, {mag_W[1,1]:12.8f}f, {mag_W[1,2]:12.8f}f }},
-  {{ {mag_W[2,0]:12.8f}f, {mag_W[2,1]:12.8f}f, {mag_W[2,2]:12.8f}f }}
-}};
-
-const float MAG_B[3] = {{
-  {mag_b[0]:12.8f}f, {mag_b[1]:12.8f}f, {mag_b[2]:12.8f}f
-}};
-
-#endif // _CALIB_PARAMS_H_
-"""
-    # 1. 툴 폴더 내부의 output 디렉토리에 로컬 백업 저장
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    output_dir = os.path.join(script_dir, "output")
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-        
-    output_path = os.path.join(output_dir, "calib_params.h")
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(header_content)
-        
-    print(f"\n📂 [툴 폴더 백업 성공] calib_params.h 가 로컬 백업되었습니다.")
-    print(f"   ↳ 경로: {output_path}")
-
-    # 2. 펌웨어 프로젝트 디렉토리에 동적 경로 해석하여 다이렉트 자동 이식 저장
-    imu_root = os.path.dirname(script_dir)
-    firmware_calib_dir = os.path.join(imu_root, "firmware", "calibrated", "calibration")
-    if not os.path.exists(firmware_calib_dir):
-        os.makedirs(firmware_calib_dir)
-        
-    firmware_output_path = os.path.join(firmware_calib_dir, "calib_params.h")
-    with open(firmware_output_path, "w", encoding="utf-8") as f:
-        f.write(header_content)
-        
-    print(f"🚀 [펌웨어 자동 이식 성공] C++ 헤더가 실시간으로 펌웨어 프로젝트에 다이렉트 갱신되었습니다!")
-    print(f"   ↳ 경로: {firmware_output_path}")
 
 def main():
     print("=" * 60)
@@ -164,17 +107,11 @@ def main():
     print(b_mag)
     print("=" * 60)
     
-    # 가속도 보정 데이터도 있는지 확인 후 헤더파일 일괄 빌드
-    acc_param_path = os.path.join(script_dir, "output", "acc_params.npz")
-    if os.path.exists(acc_param_path):
-        acc_data = np.load(acc_param_path)
-        W_acc = acc_data["W"]
-        b_acc = acc_data["b"]
-        generate_cpp_header(W_acc, b_acc, W_mag, b_mag)
-    else:
-        print("\n⚠️ 가속도계 보정 데이터(acc_params.npz)가 아직 생성되지 않았습니다.")
-        print("   accel_calibration.py를 실행한 후 다시 mag_calibration.py를 구동하면")
-        print("   본 툴이 최종 C++ 헤더파일(calib_params.h)을 일괄 빌드해 줍니다.")
+    # 자력계 파라미터 백업 파일 저장
+    param_path = os.path.join(script_dir, "output", "mag_params.npz")
+    np.savez(param_path, W=W_mag, b=b_mag)
+    print(f"\n📂 [자력계 파라미터 백업 성공] {param_path}")
+    print("💡 이제 generate_calib_params.py를 구동하여 최종 C++ 펌웨어 헤더를 통합 빌드하십시오.")
 
 if __name__ == "__main__":
     main()

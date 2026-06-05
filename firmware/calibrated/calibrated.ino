@@ -110,10 +110,14 @@ void loop() {
     float ay = accelData.yData;
     float az = accelData.zData;
 
-    // [자이로]: 500dps 감도 ➔ 라디안/s 물리 단위 변환
-    float gx = (gyroData.xData * 0.0175) * (PI / 180.0);
-    float gy = (gyroData.yData * 0.0175) * (PI / 180.0);
-    float gz = (gyroData.zData * 0.0175) * (PI / 180.0);
+    // [자이로]: 500dps 감도 ➔ 라디안/s 물리 단위 변환 및 9-Parameter 보정 적용
+    float gx_raw = (gyroData.xData * 0.0175) * (PI / 180.0);
+    float gy_raw = (gyroData.yData * 0.0175) * (PI / 180.0);
+    float gz_raw = (gyroData.zData * 0.0175) * (PI / 180.0);
+
+    float gx_cal = GYRO_W[0][0] * (gx_raw - GYRO_B[0]) + GYRO_W[0][1] * (gy_raw - GYRO_B[1]) + GYRO_W[0][2] * (gz_raw - GYRO_B[2]);
+    float gy_cal = GYRO_W[1][0] * (gx_raw - GYRO_B[0]) + GYRO_W[1][1] * (gy_raw - GYRO_B[1]) + GYRO_W[1][2] * (gz_raw - GYRO_B[2]);
+    float gz_cal = GYRO_W[2][0] * (gx_raw - GYRO_B[0]) + GYRO_W[2][1] * (gy_raw - GYRO_B[1]) + GYRO_W[2][2] * (gz_raw - GYRO_B[2]);
 
     // [자력계]: 18-bit Unsigned ➔ Zero-center Signed 정렬
     float mx = (float)rawMx - 131072.0;
@@ -138,7 +142,7 @@ void loop() {
     packet.start_byte = 0xAA;
     
     packet.accel[0] = ax_cal; packet.accel[1] = ay_cal; packet.accel[2] = az_cal;
-    packet.gyro[0]  = gx;     packet.gyro[1]  = gy;     packet.gyro[2]  = gz;
+    packet.gyro[0]  = gx_cal; packet.gyro[1]  = gy_cal; packet.gyro[2]  = gz_cal;
     packet.mag[0]   = mx_cal; packet.mag[1]   = my_cal; packet.mag[2]   = mz_cal;
 
     // 4. XOR 체크섬 계산
