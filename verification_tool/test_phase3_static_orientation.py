@@ -136,8 +136,8 @@ def main():
     m_est_sensor_all = []
     
     for i in range(20):
-        # TRIAD static initialization 기반 실측 q_est 획득
-        q_est = accel_mag_to_quaternion(acc_cal[i], mag_cal[i])
+        # TRIAD static initialization 기반 실측 q_est 획득 (가속도 부호 보정 반영)
+        q_est = accel_mag_to_quaternion(-acc_cal[i], mag_cal[i])
         
         # 쿼터니언 각도 오차 (degree)
         err_deg = q_angle_error(q_gt_lut[i], q_est)
@@ -151,7 +151,7 @@ def main():
         m_gt_sensor = R_s2n.T @ m_ned_ideal
         
         # 실측 정규화 벡터
-        g_est_sensor = -acc_cal[i] / np.linalg.norm(acc_cal[i]) # 가속도는 중력 반발력이므로 부호 반전
+        g_est_sensor = acc_cal[i] / np.linalg.norm(acc_cal[i]) # 이미 중력 가속도(Down) 방향임
         m_est_sensor = mag_cal[i] / np.linalg.norm(mag_cal[i])
         
         g_gt_sensor_all.append(g_gt_sensor)
@@ -263,9 +263,9 @@ def main():
     ax3.grid(True, linestyle=':', alpha=0.5)
     ax3.legend(loc='upper right')
     
-    # 각 막대 위에 수치 표시
+    # 각 막대 위에 수치 표시 (겹침 방지를 위한 45도 회전 및 폰트 축소 적용)
     for idx, err in enumerate(angle_errors):
-        ax3.text(idx, err + (np.max(angle_errors) * 0.01), f"{err:.1f}°", ha='center', va='bottom', fontsize=7, color='purple')
+        ax3.text(idx, err + (np.max(angle_errors) * 0.01), f"{err:.2f}°", ha='center', va='bottom', fontsize=6, color='purple', rotation=45)
         
     plt.tight_layout()
     
