@@ -136,8 +136,12 @@ def main():
     m_est_sensor_all = []
     
     for i in range(20):
-        # TRIAD static initialization 기반 실측 q_est 획득 (가속도 부호 보정 반영)
-        q_est = accel_mag_to_quaternion(-acc_cal[i], mag_cal[i])
+        # SVD 기반 Wahba 문제 최소제곱 정밀 정합 (특이점/Sign flip 완전 회피)
+        v_sensor = np.array([acc_cal[i] / np.linalg.norm(acc_cal[i]), mag_cal[i] / np.linalg.norm(mag_cal[i])])
+        v_ned = np.array([np.array([0.0, 0.0, 1.0]), m_ned_ideal])
+        res_rot, _ = R_scipy.align_vectors(v_ned, v_sensor)
+        q_est_scipy = res_rot.as_quat() # [x, y, z, w]
+        q_est = np.array([q_est_scipy[3], q_est_scipy[0], q_est_scipy[1], q_est_scipy[2]]) # [w, x, y, z]
         
         # 쿼터니언 각도 오차 (degree)
         err_deg = q_angle_error(q_gt_lut[i], q_est)
@@ -263,9 +267,9 @@ def main():
     ax3.grid(True, linestyle=':', alpha=0.5)
     ax3.legend(loc='upper right')
     
-    # 각 막대 위에 수치 표시 (겹침 방지를 위한 45도 회전 및 폰트 축소 적용)
+    # 각 막대 위에 수치 표시 (겹침 방지를 위한 90도 세로 회전 및 폰트 축소 적용)
     for idx, err in enumerate(angle_errors):
-        ax3.text(idx, err + (np.max(angle_errors) * 0.01), f"{err:.2f}°", ha='center', va='bottom', fontsize=6, color='purple', rotation=45)
+        ax3.text(idx, err + (np.max(angle_errors) * 0.02), f"{err:.2f}°", ha='center', va='bottom', fontsize=5.5, color='purple', rotation=90)
         
     plt.tight_layout()
     
