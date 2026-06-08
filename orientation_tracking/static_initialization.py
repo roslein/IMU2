@@ -132,37 +132,45 @@ def main():
     print(f"   ↳ acc_avg [g]:   {acc_avg}")
     print(f"   ↳ mag_avg [norm]: {mag_avg}")
 
-    # 5. TRIAD-NED 절대 3D 자세 수학식 구동
-    # 1 단계: 중력 가속도 역벡터로부터 Down 축 도출
-    Db = -acc_avg / np.linalg.norm(acc_avg)
+    # 5. SVD 기반 Wahba 문제 최소제곱 정밀 정합 (특이점/Sign flip 완전 회피)
+    # 3D 자북 레퍼런스 (m_ned_ref) 로드
+    calib_tool_dir = os.path.join(IMU_ROOT, "calibration_tool")
+    env_param_path = os.path.join(calib_tool_dir, "output", "env_params.npz")
     
-    # 2 단계: Down 축과 자력 평균의 기하 외적으로 East 축 도출
-    cross_D_m = np.cross(Db, mag_avg)
-    Eb = cross_D_m / np.linalg.norm(cross_D_m)
+    if os.path.exists(env_param_path):
+        env_params = np.load(env_param_path)
+        m_ned_ref = env_params["m_ned_ref"]
+        print(f"📡 로컬 환경 지자기 지도 로드 완료 (m_ned_ref: {m_ned_ref})")
+    else:
+        # Fallback: 표준 서울 복각(55도) 가정 레퍼런스 [cos(55), 0, sin(55)]
+        m_ned_ref = np.array([0.573576, 0.0, 0.819152])
+        print("⚠️  환경 지자기 지도(env_params.npz) 유실 ➔ [서울 표준 지자기 복각 55도 Fallback 적용]")
+        print(f"📡 임시 지자기 레퍼런스 (m_ned_ref): {m_ned_ref}")
+        
+    # 가속도/자력 실측 벡터 정규화
+    g_sensor = acc_avg / np.linalg.norm(acc_avg)
+    m_sensor = mag_avg / np.linalg.norm(mag_avg)
     
-    # 3 단계: East 와 Down 의 외적으로 North 축 완성
-    Nb = np.cross(Eb, Db)
+    # 1 단계: SVD 기반 Wahba 정합을 통해 센서에서 지구 NED 프레임으로의 최적 회전 복조
+    # (acc_avg는 중력 Down을 의미하므로 ideal Down [0,0,1]에 정합)
+    v_sensor = np.array([g_sensor, m_sensor])
+    v_ned = np.array([np.array([0.0, 0.0, 1.0]), m_ned_ref])
     
-    # 4 단계: 바디 좌표계에서 NED 좌표계로의 DCM R_body_to_ned 회전행렬 수립
-    # R_body_to_ned 행렬은 바디 기저를 행(Row) 벡터로 쌓아 구성합니다.
-    R_body_to_ned = np.vstack([Nb, Eb, Db])
+    res_rot, _ = R_scipy.align_vectors(v_ned, v_sensor)
+    R_body_to_ned = res_rot.as_matrix()
     
-    # 5 단계: DCM 행렬로부터 쿼터니언 및 오일러각 역산
-    r = R_scipy.from_matrix(R_body_to_ned)
-    
-    # 쿼터니언 qw, qx, qy, qz 상태 추출
-    # scipy의 as_quat()는 [qx, qy, qz, qw] 순서로 출력하므로 순서 재정렬
-    q_scipy = r.as_quat()
+    # 2 단계: 쿼터니언 qw, qx, qy, qz 상태 추출
+    q_scipy = res_rot.as_quat() # [x, y, z, w]
     q_final = np.array([q_scipy[3], q_scipy[0], q_scipy[1], q_scipy[2]]) # [qw, qx, qy, qz]
     
-    # 3축 오일러각 (XYZ 오더) 역산
-    euler_deg = r.as_euler('xyz', degrees=True)
+    # 3 단계: 3축 오일러각 (XYZ 오더) 역산
+    euler_deg = res_rot.as_euler('xyz', degrees=True)
     roll = euler_deg[0]
     pitch = euler_deg[1]
     yaw = euler_deg[2]
 
     print("\n" + "=" * 60)
-    print(" 🎉 TRIAD-NED 정적 3D 자세 추정 완료 보고")
+    print(" 🎉 SVD-Wahba 정적 3D 자세 추정 완료 보고")
     print("=" * 60)
     print(f"📐 실측 절대 자세 오일러각 (Roll, Pitch, Yaw):")
     print(f"   ↳ Roll  (X축 회전각): {roll:10.4f}°")

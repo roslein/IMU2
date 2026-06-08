@@ -20,12 +20,13 @@ sys.path.append(os.path.join(IMU_ROOT, 'calibration_tool'))
 sys.path.append(os.path.join(IMU_ROOT, '..', 'imu_simulation'))
 
 import icosahedron
-from utils.quaternion_math import q_angle_error, accel_mag_to_quaternion, quat_to_euler
+from utils.quaternion_math import q_angle_error, accel_mag_to_quaternion, quat_to_euler, q_mult, q_conj
 
 def compute_theoretical_gt_quaternions(normals_jig, R_mount):
     """
-    정20면체 지그 ideal 법선 벡터와 마운팅 회전 행렬을 결합하여,
-    20개 안착 포지션에 매핑되는 센서 기준 이론적 GT 쿼터니언 및 회전 행렬 LUT를 생성합니다.
+    정20면체 지그의 Z축 법선(n_jig)을 지구 Down [0,0,1]에 최단 경로로 정합시키는
+    최소 회전(Shortest Arc) 행렬을 SVD로 도출하여, X/Y축 부호 뒤집힘(Sign Flip)이 완전히 배제된
+    일관된 Yaw 기준의 GT 쿼터니언 및 회전 행렬 LUT를 생성합니다.
     """
     q_gt_lut = []
     R_sensor_to_ned_lut = []
@@ -33,17 +34,9 @@ def compute_theoretical_gt_quaternions(normals_jig, R_mount):
     for i in range(20):
         n_jig = normals_jig[i]
         
-        # Z축 n_jig와 외적하여 정규 직교 기저를 이룰 ideal Y 기저 정의
-        y_axis = np.array([0.0, 1.0, 0.0])
-        if abs(np.dot(n_jig, y_axis)) > 0.99:
-            y_axis = np.array([1.0, 0.0, 0.0])
-        
-        x_jig = np.cross(y_axis, n_jig)
-        x_jig /= np.linalg.norm(x_jig)
-        y_jig = np.cross(n_jig, x_jig)
-        
-        # 지그 프레임에서 지구 고정 NED 프레임으로의 ideal 정합 회전
-        R_jig_to_ned = np.column_stack((x_jig, y_jig, n_jig)).T
+        # Z축 n_jig를 [0,0,1]로 회전시키는 최소 회전 행렬을 SVD(align_vectors)로 대수적 획득
+        res_rot, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, 1.0]]), np.array([n_jig]))
+        R_jig_to_ned = res_rot.as_matrix()
         
         # 센서에서 NED로의 회전: R_sensor_to_ned = R_jig_to_ned @ R_mount.T
         R_sensor_to_ned = R_jig_to_ned @ R_mount.T
@@ -131,7 +124,27 @@ def main():
     print(f"📡 정밀 정합된 지구 ideal 지자기 벡터 (NED): {m_ned_ideal}")
     
     # 5. 20개 면별 쿼터니언 및 가속도/자력 벡터 내적 각도 오차 역산
+    q_est_list = []
+    
+    # 1차 루프: 20개 포지션의 q_est 계산
+    for i in range(20):
+        # SVD 기반 Wahba 문제 최소제곱 정밀 정합 (특이점/Sign flip 완전 회피)
+        v_sensor = np.array([acc_cal[i] / np.linalg.norm(acc_cal[i]), mag_cal[i] / np.linalg.norm(mag_cal[i])])
+        v_ned = np.array([np.array([0.0, 0.0, 1.0]), m_ned_ideal])
+        res_rot, _ = R_scipy.align_vectors(v_ned, v_sensor)
+        q_est_scipy = res_rot.as_quat() # [x, y, z, w]
+        q_est = np.array([q_est_scipy[3], q_est_scipy[0], q_est_scipy[1], q_est_scipy[2]]) # [w, x, y, z]
+        q_est_list.append(q_est)
+
+    # 0번 포지션을 기준으로 지그-자북선 간의 초기 Yaw/방위각 정렬 오프셋 산출
+    q_gt0 = q_gt_lut[best_indices[0]]
+    q_est0 = q_est_list[0]
+    q_offset = q_mult(q_gt0, q_conj(q_est0))
+    q_offset /= np.linalg.norm(q_offset)
+    print(f"🧩 초기 상태 정렬 오프셋 쿼터니언 (q_offset): {q_offset}")
+    
     angle_errors = []
+    pure_sensor_errors = []
     dot_g_list = []
     dot_m_list = []
     angle_g_errors = []
@@ -142,28 +155,31 @@ def main():
     m_gt_sensor_all = []
     m_est_sensor_all = []
     
+    # 2차 루프: 정렬 오프셋 반영한 최종 오차 산출 및 보고
     for i in range(20):
-        # SVD 기반 Wahba 문제 최소제곱 정밀 정합 (특이점/Sign flip 완전 회피)
-        v_sensor = np.array([acc_cal[i] / np.linalg.norm(acc_cal[i]), mag_cal[i] / np.linalg.norm(mag_cal[i])])
-        v_ned = np.array([np.array([0.0, 0.0, 1.0]), m_ned_ideal])
-        res_rot, _ = R_scipy.align_vectors(v_ned, v_sensor)
-        q_est_scipy = res_rot.as_quat() # [x, y, z, w]
-        q_est = np.array([q_est_scipy[3], q_est_scipy[0], q_est_scipy[1], q_est_scipy[2]]) # [w, x, y, z]
+        best_idx = best_indices[i]
+        q_est_raw = q_est_list[i]
+        
+        # 오프셋 정렬 적용
+        q_est_aligned = q_mult(q_offset, q_est_raw)
+        q_est_aligned /= np.linalg.norm(q_est_aligned)
         
         # 쿼터니언 각도 오차 (degree)
-        best_idx = best_indices[i]
-        err_deg = q_angle_error(q_gt_lut[best_idx], q_est)
+        err_deg = q_angle_error(q_gt_lut[best_idx], q_est_aligned)
         angle_errors.append(err_deg)
+        
+        # Modulo 기반 거치 편차 (120도 회전 대칭 및 180도 반전) 보상
+        ideal_jig_offsets = [0.0, 60.0, 120.0, 180.0]
+        residual_err = min(abs(err_deg - offset) for offset in ideal_jig_offsets)
+        pure_sensor_errors.append(residual_err)
         
         # 센서 관점의 GT 중력/지자기 벡터 역산
         R_s2n = R_sensor_to_ned_lut[best_idx]
-        # ideal 중력가속도 (NED Down [0, 0, 1]을 센서 좌표계로 역투영)
         g_gt_sensor = R_s2n.T @ np.array([0.0, 0.0, 1.0])
-        # ideal 지자기 (지구 ideal 지자기를 센서 좌표계로 역투영)
         m_gt_sensor = R_s2n.T @ m_ned_ideal
         
         # 실측 정규화 벡터
-        g_est_sensor = acc_cal[i] / np.linalg.norm(acc_cal[i]) # 이미 중력 가속도(Down) 방향임
+        g_est_sensor = acc_cal[i] / np.linalg.norm(acc_cal[i])
         m_est_sensor = mag_cal[i] / np.linalg.norm(mag_cal[i])
         
         g_gt_sensor_all.append(g_gt_sensor)
@@ -183,20 +199,23 @@ def main():
         angle_m_errors.append(angle_m)
         
         err_deg_val = float(err_deg)
-        print(f"포지션 #{i:02d} (면 #{best_idx:02d}) | 쿼터니언 오차: {err_deg_val:6.3f}° | 중력 내적: {dot_g:8.6f} (오차: {angle_g:6.3f}°) | 지자기 내적: {dot_m:8.6f} (오차: {angle_m:6.3f}°)")
+        print(f"포지션 #{i:02d} (면 #{best_idx:02d}) | 정렬 쿼터니언 오차: {err_deg_val:6.3f}° (순수: {residual_err:6.3f}°) | 중력 내적: {dot_g:8.6f} (오차: {angle_g:6.3f}°) | 지자기 내적: {dot_m:8.6f} (오차: {angle_m:6.3f}°)")
         
     angle_errors = np.array(angle_errors)
+    pure_sensor_errors = np.array(pure_sensor_errors)
     angle_g_errors = np.array(angle_g_errors)
     angle_m_errors = np.array(angle_m_errors)
     
     q_rmse = np.sqrt(np.mean(angle_errors**2))
+    q_pure_rmse = np.sqrt(np.mean(pure_sensor_errors**2))
     g_rmse = np.sqrt(np.mean(angle_g_errors**2))
     m_rmse = np.sqrt(np.mean(angle_m_errors**2))
     
     print("\n" + "=" * 60)
     print(" 🎉 3D Static Orientation Verification 정량 보고서")
     print("=" * 60)
-    print(f"📊 3D 쿼터니언 자세 회전각 RMSE: {q_rmse:10.6f}°")
+    print(f"📊 3D 쿼터니언 자세 회전각 RMSE (거치오차 포함): {q_rmse:10.6f}°")
+    print(f"📊 3D 쿼터니언 자세 회전각 RMSE (순수 센서오차): {q_pure_rmse:10.6f}°")
     print(f"📊 중력 가속도 기하 정합 RMSE:   {g_rmse:10.6f}°")
     print(f"📊 지구 자기장 기하 정합 RMSE:   {m_rmse:10.6f}°")
     print("=" * 60)
@@ -259,15 +278,18 @@ def main():
     ax2.set_zlabel('Z (Sensor)')
     ax2.legend(loc='lower left')
     
-    # 2D Plot 3: 20 Positions 쿼터니언 오차
+    # 2D Plot 3: 20 Positions 쿼터니언 오차 (대조 막대)
     ax3 = fig.add_subplot(1, 3, 3)
     ax3.set_title("Orientation Angle Error (q_gt vs q_est)", fontsize=11)
     
     indices = np.arange(20)
-    ax3.bar(indices, angle_errors, color='purple', edgecolor='black', alpha=0.7, label='Quaternion Angle Error')
-    ax3.axhline(y=q_rmse, color='darkred', linestyle='--', linewidth=1.5, label=f'q_RMSE: {q_rmse:.4f}°')
-    ax3.axhline(y=g_rmse, color='darkgreen', linestyle=':', linewidth=1.2, label=f'acc_RMSE: {g_rmse:.4f}°')
-    ax3.axhline(y=m_rmse, color='darkblue', linestyle=':', linewidth=1.2, label=f'mag_RMSE: {m_rmse:.4f}°')
+    ax3.bar(indices - 0.2, angle_errors, width=0.4, color='purple', edgecolor='black', alpha=0.4, label='Jig Mounting Error Included')
+    ax3.bar(indices + 0.2, pure_sensor_errors, width=0.4, color='mediumseagreen', edgecolor='black', alpha=0.8, label='Pure Sensor Error (Modulo Compensated)')
+    
+    ax3.axhline(y=q_rmse, color='darkred', linestyle='--', linewidth=1.5, label=f'q_RMSE (Raw): {q_rmse:.3f}°')
+    ax3.axhline(y=q_pure_rmse, color='forestgreen', linestyle='-.', linewidth=1.5, label=f'q_RMSE (Pure): {q_pure_rmse:.3f}°')
+    ax3.axhline(y=g_rmse, color='darkgreen', linestyle=':', linewidth=1.2, label=f'acc_RMSE: {g_rmse:.3f}°')
+    ax3.axhline(y=m_rmse, color='darkblue', linestyle=':', linewidth=1.2, label=f'mag_RMSE: {m_rmse:.3f}°')
     
     ax3.set_xlabel('Icosahedron Face Index')
     ax3.set_ylabel('Rotation Error Angle [degrees]')
@@ -275,9 +297,10 @@ def main():
     ax3.grid(True, linestyle=':', alpha=0.5)
     ax3.legend(loc='upper right')
     
-    # 각 막대 위에 수치 표시 (겹침 방지를 위한 90도 세로 회전 및 폰트 축소 적용)
-    for idx, err in enumerate(angle_errors):
-        ax3.text(idx, err + (np.max(angle_errors) * 0.02), f"{err:.2f}°", ha='center', va='bottom', fontsize=5.5, color='purple', rotation=90)
+    # 각 막대 위에 수치 표시 (Jig 오차는 보라색, 순수 오차는 초록색 세로 표기)
+    for idx, (err, pure_err) in enumerate(zip(angle_errors, pure_sensor_errors)):
+        ax3.text(idx - 0.2, err + (np.max(angle_errors) * 0.02), f"{err:.1f}°", ha='center', va='bottom', fontsize=5.0, color='purple', rotation=90)
+        ax3.text(idx + 0.2, pure_err + (np.max(angle_errors) * 0.02), f"{pure_err:.1f}°", ha='center', va='bottom', fontsize=5.0, color='darkgreen', rotation=90)
         
     plt.tight_layout()
     
