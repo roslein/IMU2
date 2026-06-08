@@ -114,10 +114,17 @@ def main():
     print("📊 지그 기하 오차(R_mount) 반영 ideal 3D GT 회전 쿼터니언 산출 완료.")
     
     # 4. 지구 고정 프레임 기준 ideal 지자기 벡터 추출 (Inclination 편향 상쇄 정합)
+    rot_normals = icosahedron.get_rotated_normals()
+    best_indices = []
+    for i in range(20):
+        best_idx, _ = icosahedron.match_face(-acc_cal[i], rot_normals)
+        best_indices.append(best_idx)
+        
     m_ned_list = []
     for i in range(20):
         # 실측 mag_cal 데이터를 GT 회전 행렬로 지구 고정 NED 프레임으로 회전 투영
-        m_ned = R_sensor_to_ned_lut[i] @ mag_cal[i]
+        best_idx = best_indices[i]
+        m_ned = R_sensor_to_ned_lut[best_idx] @ mag_cal[i]
         m_ned_list.append(m_ned)
     m_ned_mean = np.mean(m_ned_list, axis=0)
     m_ned_ideal = m_ned_mean / np.linalg.norm(m_ned_mean)
@@ -144,11 +151,12 @@ def main():
         q_est = np.array([q_est_scipy[3], q_est_scipy[0], q_est_scipy[1], q_est_scipy[2]]) # [w, x, y, z]
         
         # 쿼터니언 각도 오차 (degree)
-        err_deg = q_angle_error(q_gt_lut[i], q_est)
+        best_idx = best_indices[i]
+        err_deg = q_angle_error(q_gt_lut[best_idx], q_est)
         angle_errors.append(err_deg)
         
         # 센서 관점의 GT 중력/지자기 벡터 역산
-        R_s2n = R_sensor_to_ned_lut[i]
+        R_s2n = R_sensor_to_ned_lut[best_idx]
         # ideal 중력가속도 (NED Down [0, 0, 1]을 센서 좌표계로 역투영)
         g_gt_sensor = R_s2n.T @ np.array([0.0, 0.0, 1.0])
         # ideal 지자기 (지구 ideal 지자기를 센서 좌표계로 역투영)
@@ -175,7 +183,7 @@ def main():
         angle_m_errors.append(angle_m)
         
         err_deg_val = float(err_deg)
-        print(f"포지션 #{i:02d} | 쿼터니언 오차: {err_deg_val:6.3f}° | 중력 내적: {dot_g:8.6f} (오차: {angle_g:6.3f}°) | 지자기 내적: {dot_m:8.6f} (오차: {angle_m:6.3f}°)")
+        print(f"포지션 #{i:02d} (면 #{best_idx:02d}) | 쿼터니언 오차: {err_deg_val:6.3f}° | 중력 내적: {dot_g:8.6f} (오차: {angle_g:6.3f}°) | 지자기 내적: {dot_m:8.6f} (오차: {angle_m:6.3f}°)")
         
     angle_errors = np.array(angle_errors)
     angle_g_errors = np.array(angle_g_errors)
