@@ -91,43 +91,44 @@ def calibrate_mag_3param(mag_raw):
         return W_est, b_est
     return preconditioned_solver(mag_raw, solver)
 
-# 6-parameter 자력계 보정 솔버 (대각 스케일 + 오프셋)
+# Cholesky Parameterization helper for 100% SPD guarantee
+def make_spd(p):
+    L = np.array([
+        [np.exp(p[0]), 0.0, 0.0],
+        [p[1], np.exp(p[2]), 0.0],
+        [p[3], p[4], np.exp(p[5])]
+    ])
+    return L @ L.T
+
+# 6-parameter 자력계 보정 솔버 (대각 스케일 + 오프셋, 스케일 exp 처리로 양수 강제)
 def calibrate_mag_6param(mag_raw):
     def solver(d):
         def residuals(p, x):
             b = p[:3]
-            W = np.diag(p[3:6])
+            W = np.diag(np.exp(p[3:6]))
             cal = (W @ (x - b).T).T
             return np.linalg.norm(cal, axis=1) - 1.0
-        p0 = np.array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0])
+        p0 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         res = least_squares(residuals, p0, args=(d,), method='lm')
         p = res.x
         b_est = p[:3]
-        W_est = np.diag(p[3:6])
+        W_est = np.diag(np.exp(p[3:6]))
         return W_est, b_est
     return preconditioned_solver(mag_raw, solver)
 
-# 9-parameter Symmetric 자력계 보정 솔버 (대칭 행렬 W, 회전 방지)
+# 9-parameter Symmetric 자력계 보정 솔버 (Cholesky SPD 제약 적용)
 def calibrate_mag_9param_sym(mag_raw):
     def solver(d):
         def residuals(p, x):
             b = p[:3]
-            W = np.array([
-                [p[3], p[4], p[5]],
-                [p[4], p[6], p[7]],
-                [p[5], p[7], p[8]]
-            ])
+            W = make_spd(p[3:9])
             cal = (W @ (x - b).T).T
             return np.linalg.norm(cal, axis=1) - 1.0
-        p0 = np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0])
+        p0 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         res = least_squares(residuals, p0, args=(d,), method='lm')
         p = res.x
         b_est = p[:3]
-        W_est = np.array([
-            [p[3], p[4], p[5]],
-            [p[4], p[6], p[7]],
-            [p[5], p[7], p[8]]
-        ])
+        W_est = make_spd(p[3:9])
         return W_est, b_est
     return preconditioned_solver(mag_raw, solver)
 
@@ -150,7 +151,7 @@ def calibrate_mag_9param_full(mag_raw):
         return W_est, b_est
     return preconditioned_solver(mag_raw, solver)
 
-# 융합형 가중 패널티 자력계 보정 솔버 (제4안)
+# 융합형 가중 패널티 자력계 보정 솔버 (제4안, Cholesky SPD 제약 적용)
 # J = mean(J_all) + lambda * mean(J_face)
 def calibrate_mag_hybrid(mag_raw_all, mag_raw_face, lmbda=1.0):
     # preconditioning 스케일 팩터 산출
@@ -162,15 +163,9 @@ def calibrate_mag_hybrid(mag_raw_all, mag_raw_face, lmbda=1.0):
     d_all = (mag_raw_all - mean_raw) / scale_factor
     d_face = (mag_raw_face - mean_raw) / scale_factor
     
-    # Symmetric W 제약 조건으로 하이브리드 목적 잔차 정의
-    # least_squares는 1D 잔차 벡터를 리턴해야 함
     def residuals(p, x_all, x_face):
         b = p[:3]
-        W = np.array([
-            [p[3], p[4], p[5]],
-            [p[4], p[6], p[7]],
-            [p[5], p[7], p[8]]
-        ])
+        W = make_spd(p[3:9])
         
         # 전체 데이터 잔차
         cal_all = (W @ (x_all - b).T).T
@@ -187,20 +182,17 @@ def calibrate_mag_hybrid(mag_raw_all, mag_raw_face, lmbda=1.0):
         
         return np.concatenate([res_all_scaled, res_face_scaled])
         
-    p0 = np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0])
+    p0 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     res = least_squares(residuals, p0, args=(d_all, d_face), method='lm')
     p = res.x
     b_normed = p[:3]
-    W_normed = np.array([
-        [p[3], p[4], p[5]],
-        [p[4], p[6], p[7]],
-        [p[5], p[7], p[8]]
-    ])
+    W_normed = make_spd(p[3:9])
     
     W_est = W_normed / scale_factor
     b_est = mean_raw + scale_factor * b_normed
     
     return W_est, b_est
+
 
 def main():
     if sys.platform == 'win32':
