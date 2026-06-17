@@ -146,7 +146,7 @@ def main():
     q_gt_lut, R_sensor_to_ned_lut = compute_theoretical_gt_quaternions(normals_jig, R_mount)
     rot_normals = icosahedron.get_rotated_normals()
     
-    # 3. 전체 데이터 기준 자북 레퍼런스 벡터 사전 구정 (Inclination 바이어스 튜닝)
+    # 3. 전체 데이터 기준 복각 레퍼런스 평균 사전 구정 (Inclination 바이어스 튜닝)
     acc_mean_all = np.mean(acc_100s, axis=1)
     mag_mean_all = np.mean(mag_100s, axis=1)
     
@@ -157,14 +157,14 @@ def main():
     acc_cal_all = (W_acc_all @ (acc_mean_all - b_acc_all).T).T
     mag_cal_all = (W_mag_all @ (mag_mean_all - b_mag_all).T).T
     
-    m_ned_list = []
-    for i in range(20):
-        best_idx = best_indices[i]
-        m_ned = R_sensor_to_ned_lut[best_idx] @ mag_cal_all[i]
-        m_ned_list.append(m_ned)
-    m_ned_mean = np.mean(m_ned_list, axis=0)
-    m_ned_ref = m_ned_mean / np.linalg.norm(m_ned_mean)
-    print(f"📡 튜닝된 3D 자북 레퍼런스 벡터 (m_ned_ref): {m_ned_ref}")
+    dip_ref_list = []
+    for k in range(20):
+        a_vec = acc_cal_all[k] / np.linalg.norm(acc_cal_all[k])
+        m_vec = mag_cal_all[k] / np.linalg.norm(mag_cal_all[k])
+        dot_val = np.clip(np.dot(a_vec, m_vec), -1.0, 1.0)
+        dip_ref_list.append(90.0 - np.degrees(np.arccos(dot_val)))
+    dip_ref_mean = np.mean(dip_ref_list)
+    print(f"📡 튜닝된 전역 기준 복각 평균 (dip_ref_mean): {dip_ref_mean:.2f} deg")
     
     # 4. 윈도우 그리드 정의 (수집 데이터 크기에 비례하되 최대 10.0초로 상한 제약 적용)
     ratios = np.array([0.01, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9, 1.0])
@@ -192,9 +192,9 @@ def main():
     txt_report_lines.append(" 🎯 IMU Phase 3.2 Calibration vs Est Window Analysis Report (Sliding Window 6-Ensemble)")
     txt_report_lines.append("=" * 80)
     txt_report_lines.append(f"Data Source: collected_data_100s.npz")
-    txt_report_lines.append(f"3D Local Earth Magnetic Vector Reference (NED): {m_ned_ref.tolist()}")
+    txt_report_lines.append(f"Tuned Dip Angle Reference: {dip_ref_mean:.4f} deg")
     txt_report_lines.append("-" * 80)
-    txt_report_lines.append(f"{'T_cal (s)':<12}{'T_est (s)':<12}{'Accel RMSE (deg)':<20}{'Mag RMSE (deg)':<18}{'Quaternion RMSE (deg)':<22}")
+    txt_report_lines.append(f"{'T_cal (s)':<12}{'T_est (s)':<12}{'Accel RMSE (deg)':<20}{'Mag Norm RMSE':<18}{'Dip RMSE (deg)':<22}")
     txt_report_lines.append("-" * 80)
     
     # 대표 T_cal (최소, 중간, 최대) 선정 및 데이터 저장소 정의
@@ -266,8 +266,8 @@ def main():
                 
                 # 가속도 및 자력계 정합 오차(각도 에러) 계산
                 g_errors = []
-                m_errors = []
-                q_est_list = []
+                m_norm_errors = []
+                dip_errors = []
                 
                 for k in range(20):
                     best_idx = best_indices[k]
@@ -279,45 +279,25 @@ def main():
                     dot_g = np.clip(np.dot(g_gt_sensor, g_est_sensor), -1.0, 1.0)
                     g_errors.append(np.degrees(np.arccos(dot_g)))
                     
-                    # 자력계 각도 오차
-                    m_gt_sensor = R_s2n.T @ m_ned_ref
-                    m_est_sensor = mag_est_cal[k] / np.linalg.norm(mag_est_cal[k])
-                    dot_m = np.clip(np.dot(m_gt_sensor, m_est_sensor), -1.0, 1.0)
-                    m_errors.append(np.degrees(np.arccos(dot_m)))
+                    # 자력계 크기 오차 (놈과 1.0의 잔차)
+                    m_norm = np.linalg.norm(mag_est_cal[k])
+                    m_norm_errors.append(m_norm - 1.0)
                     
-                    # SVD 자세 추정
-                    v_sensor = np.array([g_est_sensor, m_est_sensor])
-                    v_ned = np.array([np.array([0.0, 0.0, 1.0]), m_ned_ref])
-                    res_rot, _ = R_scipy.align_vectors(v_ned, v_sensor)
-                    q_scipy = res_rot.as_quat()
-                    q_est = np.array([q_scipy[3], q_scipy[0], q_scipy[1], q_scipy[2]])
-                    q_est_list.append(q_est)
-                    
-                # 0번 면 기준 Yaw 정렬 오프셋 산출
-                q_gt0 = q_gt_lut[best_indices[0]]
-                q_est0 = q_est_list[0]
-                q_offset = q_mult(q_gt0, q_conj(q_est0))
-                q_offset /= np.linalg.norm(q_offset)
-                
-                # Modulo 보상 후 쿼터니언 순수 오차 산출
-                ideal_jig_offsets = [0.0, 60.0, 120.0, 180.0]
-                q_errors = []
-                for k in range(20):
-                    best_idx = best_indices[k]
-                    q_est_aligned = q_mult(q_offset, q_est_list[k])
-                    q_est_aligned /= np.linalg.norm(q_est_aligned)
-                    err_deg = q_angle_error(q_gt_lut[best_idx], q_est_aligned)
-                    residual_err = min(abs(err_deg - offset) for offset in ideal_jig_offsets)
-                    q_errors.append(residual_err)
+                    # 중력-자자기 사잇각 복각 및 기준 복각과의 오차 계산
+                    a_est_unit = acc_est_cal[k] / np.linalg.norm(acc_est_cal[k])
+                    m_est_unit = mag_est_cal[k] / np.linalg.norm(mag_est_cal[k])
+                    dot_am = np.clip(np.dot(a_est_unit, m_est_unit), -1.0, 1.0)
+                    dip_val = 90.0 - np.degrees(np.arccos(dot_am))
+                    dip_errors.append(dip_val - dip_ref_mean)
                     
                 # 20개 포지션에 대한 RMSE 도출
                 rmse_acc = np.sqrt(np.mean(np.array(g_errors)**2))
-                rmse_mag = np.sqrt(np.mean(np.array(m_errors)**2))
-                rmse_quat = np.sqrt(np.mean(np.array(q_errors)**2))
+                rmse_mag_norm = np.sqrt(np.mean(np.array(m_norm_errors)**2))
+                rmse_dip = np.sqrt(np.mean(np.array(dip_errors)**2))
                 
                 iter_rmse_acc.append(rmse_acc)
-                iter_rmse_mag.append(rmse_mag)
-                iter_rmse_quat.append(rmse_quat)
+                iter_rmse_mag.append(rmse_mag_norm)
+                iter_rmse_quat.append(rmse_dip)
                 
             # 앙상블 평균 저장
             Z_acc[j, i] = np.mean(iter_rmse_acc)
@@ -334,7 +314,7 @@ def main():
     
     # 6. 3D Surface 시각화 및 플롯 저장
     fig = plt.figure(figsize=(18, 5.5))
-    fig.suptitle("3D Surface: IMU Calibration & Estimation Window Size Analysis", fontsize=14, fontweight='bold')
+    fig.suptitle("3D Surface: IMU Window Analysis (Accel / Mag Norm / Dip Angle)", fontsize=14, fontweight='bold')
     
     # Subplot 1: 가속도계 정합 오차
     ax1 = fig.add_subplot(1, 3, 1, projection='3d')
@@ -345,19 +325,19 @@ def main():
     ax1.set_zlabel("RMSE [deg]")
     fig.colorbar(surf1, ax=ax1, shrink=0.5, aspect=10)
     
-    # Subplot 2: 자력계 정합 오차
+    # Subplot 2: 자력계 놈 오차
     ax2 = fig.add_subplot(1, 3, 2, projection='3d')
     surf2 = ax2.plot_surface(X, Y, Z_mag, cmap='coolwarm', edgecolor='none', alpha=0.9)
-    ax2.set_title("Magnetometer Alignment RMSE (deg)", fontsize=10)
+    ax2.set_title("Magnetometer Norm RMSE", fontsize=10)
     ax2.set_xlabel("T_cal Window (s)")
     ax2.set_ylabel("T_est Window (s)")
-    ax2.set_zlabel("RMSE [deg]")
+    ax2.set_zlabel("Norm Error")
     fig.colorbar(surf2, ax=ax2, shrink=0.5, aspect=10)
     
-    # Subplot 3: 쿼터니언 자세 오차
+    # Subplot 3: 중력-자지기 복각 오차
     ax3 = fig.add_subplot(1, 3, 3, projection='3d')
     surf3 = ax3.plot_surface(X, Y, Z_quat, cmap='coolwarm', edgecolor='none', alpha=0.9)
-    ax3.set_title("Quaternion Orientation Pure RMSE (deg)", fontsize=10)
+    ax3.set_title("Dip Angle RMSE (deg)", fontsize=10)
     ax3.set_xlabel("T_cal Window (s)")
     ax3.set_ylabel("T_est Window (s)")
     ax3.set_zlabel("RMSE [deg]")
