@@ -243,6 +243,22 @@ def main():
     output_dir = os.path.join(script_dir, "output")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
+        
+    # 기존 완성 데이터가 있을 경우 자동 안전 백업
+    final_save_path = os.path.join(output_dir, "collected_data_100s.npz")
+    if os.path.exists(final_save_path):
+        try:
+            mtime = os.path.getmtime(final_save_path)
+            time_struct = time.localtime(mtime)
+            timestamp_str = time.strftime("%Y%m%d_%H%M%S", time_struct)
+            backup_name = f"collected_data_100s_backup_{timestamp_str}.npz"
+            backup_path = os.path.join(output_dir, backup_name)
+            os.rename(final_save_path, backup_path)
+            print(f"\n📁 [자동 백업 완료] 기존 완성본을 감지하여 안전하게 백업했습니다.")
+            print(f"   ➔ 백업 파일: output/{backup_name}")
+        except Exception as e:
+            print(f"\n⚠️ [백업 실패] 기존 데이터 백업(이름 변경) 중 오류 발생: {e}")
+            
     checkpoint_path = os.path.join(output_dir, "checkpoint_data_100s.npz")
     
     if os.path.exists(checkpoint_path):
