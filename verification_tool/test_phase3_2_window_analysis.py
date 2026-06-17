@@ -166,10 +166,11 @@ def main():
     m_ned_ref = m_ned_mean / np.linalg.norm(m_ned_mean)
     print(f"📡 튜닝된 3D 자북 레퍼런스 벡터 (m_ned_ref): {m_ned_ref}")
     
-    # 4. 윈도우 그리드 정의 (수집 데이터 크기에 비례하여 동적 선언)
+    # 4. 윈도우 그리드 정의 (수집 데이터 크기에 비례하되 최대 10.0초로 상한 제약 적용)
     ratios = np.array([0.01, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9, 1.0])
-    T_cal_list = np.round(max_time * ratios, 1)
-    T_est_list = np.round(max_time * ratios, 1)
+    max_scan_time = min(max_time * 2.0 / 3.0, 10.0) # 15초 데이터 기준 10.0초 상한
+    T_cal_list = np.round(max_scan_time * ratios, 1)
+    T_est_list = np.round(max_scan_time * ratios, 1)
     
     # 최소 윈도우가 0.1초 미만이 되지 않도록 보장
     T_cal_list = np.clip(T_cal_list, 0.1, None)
@@ -188,7 +189,7 @@ def main():
     # 🎯 정량 수치 보고서 텍스트 저장을 위한 리스트 초기화
     txt_report_lines = []
     txt_report_lines.append("=" * 80)
-    txt_report_lines.append(" 🎯 IMU Phase 3.2 Calibration vs Est Window Analysis Report")
+    txt_report_lines.append(" 🎯 IMU Phase 3.2 Calibration vs Est Window Analysis Report (Sliding Window 6-Ensemble)")
     txt_report_lines.append("=" * 80)
     txt_report_lines.append(f"Data Source: collected_data_100s.npz")
     txt_report_lines.append(f"3D Local Earth Magnetic Vector Reference (NED): {m_ned_ref.tolist()}")
@@ -209,104 +210,125 @@ def main():
     
     print(f"📊 [동적 격자 스캔] T_cal 후보군: {T_cal_list}")
     print(f"📊 [동적 격자 스캔] T_est 후보군: {T_est_list}")
-    print("\n📊 2D 윈도우 하이브리드 파라미터 그리드 스캔 개시...")
+    print("\n📊 2D 윈도우 하이브리드 파라미터 그리드 스캔 개시 (슬라이딩 윈도우 6-Ensemble)...")
     
     # 100Hz 기준 윈도우 인덱스 매핑 사전 계산
     sample_indices_cal = [int(t * 100) for t in T_cal_list]
     sample_indices_est = [int(t * 100) for t in T_est_list]
     
-    # 5. 그리드 루프 구동
+    # 5. 그리드 루프 구동 (6회 슬라이딩 윈도우 앙상블 평균)
+    I_num = 6
     for i, t_cal in enumerate(T_cal_list):
         n_cal = sample_indices_cal[i]
-        # 보정 윈도우 슬라이싱 평균
-        acc_cal_raw = np.mean(acc_100s[:, :n_cal, :], axis=1)
-        mag_cal_raw = np.mean(mag_100s[:, :n_cal, :], axis=1)
-        
-        # 보정 파라미터 산출
-        W_acc, b_acc, _ = calibrate_acc_12param(acc_cal_raw, rot_normals)
-        W_mag, b_mag = calibrate_mag_9param(mag_cal_raw)
-        
-        # 대표 T_cal에 매칭 시 시각화용 데이터 캡처
-        if t_cal in representative_cal_data:
-            acc_cal_cal = (W_acc @ (acc_cal_raw - b_acc).T).T
-            mag_cal_cal = (W_mag @ (mag_cal_raw - b_mag).T).T
-            representative_cal_data[t_cal] = {
-                "acc_raw": acc_cal_raw,
-                "mag_raw": mag_cal_raw,
-                "acc_cal": acc_cal_cal,
-                "mag_cal": mag_cal_cal
-            }
         
         for j, t_est in enumerate(T_est_list):
             n_est = sample_indices_est[j]
-            # 자세 측정 윈도우 슬라이싱 평균
-            acc_est_raw = np.mean(acc_100s[:, :n_est, :], axis=1)
-            mag_est_raw = np.mean(mag_100s[:, :n_est, :], axis=1)
             
-            # 보정 대수식 적용
-            acc_est_cal = (W_acc @ (acc_est_raw - b_acc).T).T
-            mag_est_cal = (W_mag @ (mag_est_raw - b_mag).T).T
+            iter_rmse_acc = []
+            iter_rmse_mag = []
+            iter_rmse_quat = []
             
-            # 가속도 및 자력계 정합 오차(각도 에러) 계산
-            g_errors = []
-            m_errors = []
-            q_est_list = []
-            
-            for k in range(20):
-                best_idx = best_indices[k]
+            n_max = max(n_cal, n_est)
+            if N_samples > n_max:
+                S_step = (N_samples - n_max) // (I_num - 1)
+            else:
+                S_step = 0
                 
-                # 가속도 각도 오차
-                R_s2n = R_sensor_to_ned_lut[best_idx]
-                g_gt_sensor = R_s2n.T @ np.array([0.0, 0.0, 1.0])
-                g_est_sensor = acc_est_cal[k] / np.linalg.norm(acc_est_cal[k])
-                dot_g = np.clip(np.dot(g_gt_sensor, g_est_sensor), -1.0, 1.0)
-                g_errors.append(np.degrees(np.arccos(dot_g)))
+            for it in range(I_num):
+                start = it * S_step
                 
-                # 자력계 각도 오차
-                m_gt_sensor = R_s2n.T @ m_ned_ref
-                m_est_sensor = mag_est_cal[k] / np.linalg.norm(mag_est_cal[k])
-                dot_m = np.clip(np.dot(m_gt_sensor, m_est_sensor), -1.0, 1.0)
-                m_errors.append(np.degrees(np.arccos(dot_m)))
+                # 보정 윈도우 슬라이싱 평균
+                acc_cal_raw = np.mean(acc_100s[:, start : start + n_cal, :], axis=1)
+                mag_cal_raw = np.mean(mag_100s[:, start : start + n_cal, :], axis=1)
                 
-                # SVD 자세 추정
-                v_sensor = np.array([g_est_sensor, m_est_sensor])
-                v_ned = np.array([np.array([0.0, 0.0, 1.0]), m_ned_ref])
-                res_rot, _ = R_scipy.align_vectors(v_ned, v_sensor)
-                q_scipy = res_rot.as_quat()
-                q_est = np.array([q_scipy[3], q_scipy[0], q_scipy[1], q_scipy[2]])
-                q_est_list.append(q_est)
+                # 보정 파라미터 산출
+                W_acc, b_acc, _ = calibrate_acc_12param(acc_cal_raw, rot_normals)
+                W_mag, b_mag = calibrate_mag_9param(mag_cal_raw)
                 
-            # 0번 면 기준 Yaw 정렬 오프셋 산출
-            q_gt0 = q_gt_lut[best_indices[0]]
-            q_est0 = q_est_list[0]
-            q_offset = q_mult(q_gt0, q_conj(q_est0))
-            q_offset /= np.linalg.norm(q_offset)
-            
-            # Modulo 보상 후 쿼터니언 순수 오차 산출
-            ideal_jig_offsets = [0.0, 60.0, 120.0, 180.0]
-            q_errors = []
-            for k in range(20):
-                best_idx = best_indices[k]
-                q_est_aligned = q_mult(q_offset, q_est_list[k])
-                q_est_aligned /= np.linalg.norm(q_est_aligned)
-                err_deg = q_angle_error(q_gt_lut[best_idx], q_est_aligned)
-                residual_err = min(abs(err_deg - offset) for offset in ideal_jig_offsets)
-                q_errors.append(residual_err)
+                # 대표 T_cal에 매칭 시 시각화용 데이터 캡처 (첫 번째 이터레이션 기준)
+                if it == 0 and t_cal in representative_cal_data and t_est == T_est_list[-1]:
+                    acc_cal_cal = (W_acc @ (acc_cal_raw - b_acc).T).T
+                    mag_cal_cal = (W_mag @ (mag_cal_raw - b_mag).T).T
+                    representative_cal_data[t_cal] = {
+                        "acc_raw": acc_cal_raw,
+                        "mag_raw": mag_cal_raw,
+                        "acc_cal": acc_cal_cal,
+                        "mag_cal": mag_cal_cal
+                    }
                 
-            # 20개 포지션에 대한 RMSE 도출
-            rmse_acc = np.sqrt(np.mean(np.array(g_errors)**2))
-            rmse_mag = np.sqrt(np.mean(np.array(m_errors)**2))
-            rmse_quat = np.sqrt(np.mean(np.array(q_errors)**2))
-            
-            Z_acc[j, i] = rmse_acc
-            Z_mag[j, i] = rmse_mag
-            Z_quat[j, i] = rmse_quat
+                # 자세 측정 윈도우 슬라이싱 평균
+                acc_est_raw = np.mean(acc_100s[:, start : start + n_est, :], axis=1)
+                mag_est_raw = np.mean(mag_100s[:, start : start + n_est, :], axis=1)
+                
+                # 보정 대수식 적용
+                acc_est_cal = (W_acc @ (acc_est_raw - b_acc).T).T
+                mag_est_cal = (W_mag @ (mag_est_raw - b_mag).T).T
+                
+                # 가속도 및 자력계 정합 오차(각도 에러) 계산
+                g_errors = []
+                m_errors = []
+                q_est_list = []
+                
+                for k in range(20):
+                    best_idx = best_indices[k]
+                    
+                    # 가속도 각도 오차
+                    R_s2n = R_sensor_to_ned_lut[best_idx]
+                    g_gt_sensor = R_s2n.T @ np.array([0.0, 0.0, 1.0])
+                    g_est_sensor = acc_est_cal[k] / np.linalg.norm(acc_est_cal[k])
+                    dot_g = np.clip(np.dot(g_gt_sensor, g_est_sensor), -1.0, 1.0)
+                    g_errors.append(np.degrees(np.arccos(dot_g)))
+                    
+                    # 자력계 각도 오차
+                    m_gt_sensor = R_s2n.T @ m_ned_ref
+                    m_est_sensor = mag_est_cal[k] / np.linalg.norm(mag_est_cal[k])
+                    dot_m = np.clip(np.dot(m_gt_sensor, m_est_sensor), -1.0, 1.0)
+                    m_errors.append(np.degrees(np.arccos(dot_m)))
+                    
+                    # SVD 자세 추정
+                    v_sensor = np.array([g_est_sensor, m_est_sensor])
+                    v_ned = np.array([np.array([0.0, 0.0, 1.0]), m_ned_ref])
+                    res_rot, _ = R_scipy.align_vectors(v_ned, v_sensor)
+                    q_scipy = res_rot.as_quat()
+                    q_est = np.array([q_scipy[3], q_scipy[0], q_scipy[1], q_scipy[2]])
+                    q_est_list.append(q_est)
+                    
+                # 0번 면 기준 Yaw 정렬 오프셋 산출
+                q_gt0 = q_gt_lut[best_indices[0]]
+                q_est0 = q_est_list[0]
+                q_offset = q_mult(q_gt0, q_conj(q_est0))
+                q_offset /= np.linalg.norm(q_offset)
+                
+                # Modulo 보상 후 쿼터니언 순수 오차 산출
+                ideal_jig_offsets = [0.0, 60.0, 120.0, 180.0]
+                q_errors = []
+                for k in range(20):
+                    best_idx = best_indices[k]
+                    q_est_aligned = q_mult(q_offset, q_est_list[k])
+                    q_est_aligned /= np.linalg.norm(q_est_aligned)
+                    err_deg = q_angle_error(q_gt_lut[best_idx], q_est_aligned)
+                    residual_err = min(abs(err_deg - offset) for offset in ideal_jig_offsets)
+                    q_errors.append(residual_err)
+                    
+                # 20개 포지션에 대한 RMSE 도출
+                rmse_acc = np.sqrt(np.mean(np.array(g_errors)**2))
+                rmse_mag = np.sqrt(np.mean(np.array(m_errors)**2))
+                rmse_quat = np.sqrt(np.mean(np.array(q_errors)**2))
+                
+                iter_rmse_acc.append(rmse_acc)
+                iter_rmse_mag.append(rmse_mag)
+                iter_rmse_quat.append(rmse_quat)
+                
+            # 앙상블 평균 저장
+            Z_acc[j, i] = np.mean(iter_rmse_acc)
+            Z_mag[j, i] = np.mean(iter_rmse_mag)
+            Z_quat[j, i] = np.mean(iter_rmse_quat)
             
             # 수치 정보 라인 누적
-            line_str = f"{t_cal:<12.1f}{t_est:<12.1f}{rmse_acc:<20.4f}{rmse_mag:<18.4f}{rmse_quat:<22.4f}"
+            line_str = f"{t_cal:<12.1f}{t_est:<12.1f}{Z_acc[j, i]:<20.4f}{Z_mag[j, i]:<18.4f}{Z_quat[j, i]:<22.4f}"
             txt_report_lines.append(line_str)
             
-        print(f"   ↳ [스캔 완료] T_cal = {t_cal:5.1f}s | T_est 수집 루프 분석 완료")
+        print(f"   ↳ [스캔 완료] T_cal = {t_cal:5.1f}s | T_est 6-Ensemble 수집 루프 분석 완료")
         
     print("\n🎉 모든 파라미터 그리드 스캔이 완수되었습니다. 3D Surface 시각화를 개시합니다.")
     

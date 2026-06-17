@@ -22,7 +22,7 @@ sys.path.append(IMU_ROOT)
 sys.path.append(os.path.join(IMU_ROOT, 'calibration_tool'))
 
 # 🎯 수집 제어 상수 (이 시간만 수정하면 자동으로 모든 수집 샘플 개수가 연동됨)
-COLLECT_TIME_SEC = 10.0
+COLLECT_TIME_SEC = 15.0
 EXPECTED_SAMPLES = int(COLLECT_TIME_SEC * 100)  # 100Hz 기준 수집 샘플수
 
 PACKET_SIZE = 39
