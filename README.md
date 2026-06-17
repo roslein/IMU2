@@ -67,7 +67,7 @@
 
 ### 3) 3단계: 3D 정적 자세 쿼터니언 정량 오차 독립 검증 (Validation)
 1. 3D Quiver 및 상대 정렬 검증: verification_tool/test_phase3_1_static_orientation.py 를 가동합니다. 0번 포지션 방위각 설치 바이어스를 제거하고 120도 삼각형 대칭 오차를 Modulo 보상하여, 순수 센서 자세 RMSE 및 1대1로 일치된 3D 화살표 정합 상태를 시각적으로 검증합니다.
-2. 시간 윈도우 스캔 분석: verification_tool/test_phase3_2_window_analysis.py 를 가동합니다. 보정/측정 시간 변화에 따른 통계적 앙상블 평균 RMSE의 수렴 형태를 3D Surface 화면 팝업으로 조작 분석하고 정량 텍스트 리포트(window_analysis_report.txt)를 확보합니다.
+2. 시간 윈도우 스캔 분석: 분석 가동 전에 반드시 verification_tool/data_collection_100s.py를 구동하여 20개 포지션에 대한 15초 원시 시계열 데이터(collected_data_100s.npz)를 사전 수집 구축해 두어야 합니다. 이후 verification_tool/test_phase3_2_window_analysis.py 를 가동하여 보정/측정 시간 변화에 따른 통계적 앙상블 평균 RMSE의 수렴 형태를 3D Surface 화면 팝업으로 조작 분석하고 정량 텍스트 리포트(window_analysis_report.txt)를 확보합니다.
 
 ⚠️ 주의 (이중 보정 방지 가이드라인)
 - 시간 윈도우 스캔 분석(test_phase3_2_window_analysis.py) 기동 시 사용되는 collected_data_100s.npz는 반드시 raw.ino 펌웨어 상태에서 수집된 미가공 raw LSB 데이터여야 합니다.
