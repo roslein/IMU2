@@ -236,7 +236,7 @@ def main():
               color='crimson', alpha=0.6, length=1.0, arrow_length_ratio=0.1, label='Ideal GT (Gravity)')
     # 실측 중력 벡터 그리기 (Blue)
     ax1.quiver(0, 0, 0, g_est_sensor_all[:,0], g_est_sensor_all[:,1], g_est_sensor_all[:,2], 
-              color='royalblue', alpha=0.8, length=0.9, arrow_length_ratio=0.1, label='Calibrated (Gravity)')
+              color='royalblue', alpha=0.8, length=1.0, arrow_length_ratio=0.1, label='Calibrated (Gravity)')
               
     # 구면 가이드 와이어프레임 렌더링
     u = np.linspace(0, 2 * np.pi, 20)
@@ -266,7 +266,7 @@ def main():
               color='crimson', alpha=0.6, length=1.0, arrow_length_ratio=0.1, label='Ideal GT (Mag Field)')
     # 실측 지자기 벡터 그리기 (Blue)
     ax2.quiver(0, 0, 0, m_est_sensor_all[:,0], m_est_sensor_all[:,1], m_est_sensor_all[:,2], 
-              color='royalblue', alpha=0.8, length=0.9, arrow_length_ratio=0.1, label='Calibrated (Mag Field)')
+              color='royalblue', alpha=0.8, length=1.0, arrow_length_ratio=0.1, label='Calibrated (Mag Field)')
               
     ax2.plot_wireframe(x, y, z, color='gray', alpha=0.1, linewidth=0.5)
     

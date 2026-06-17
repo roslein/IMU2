@@ -185,6 +185,17 @@ def main():
     Z_mag = np.zeros_like(X)
     Z_quat = np.zeros_like(X)
     
+    # 🎯 정량 수치 보고서 텍스트 저장을 위한 리스트 초기화
+    txt_report_lines = []
+    txt_report_lines.append("=" * 80)
+    txt_report_lines.append(" 🎯 IMU Phase 3.2 Calibration vs Est Window Analysis Report")
+    txt_report_lines.append("=" * 80)
+    txt_report_lines.append(f"Data Source: collected_data_100s.npz")
+    txt_report_lines.append(f"3D Local Earth Magnetic Vector Reference (NED): {m_ned_ref.tolist()}")
+    txt_report_lines.append("-" * 80)
+    txt_report_lines.append(f"{'T_cal (s)':<12}{'T_est (s)':<12}{'Accel RMSE (deg)':<20}{'Mag RMSE (deg)':<18}{'Quaternion RMSE (deg)':<22}")
+    txt_report_lines.append("-" * 80)
+    
     # 대표 T_cal (최소, 중간, 최대) 선정 및 데이터 저장소 정의
     t_cal_min = T_cal_list[0]
     t_cal_mid = T_cal_list[len(T_cal_list) // 2]
@@ -291,6 +302,10 @@ def main():
             Z_mag[j, i] = rmse_mag
             Z_quat[j, i] = rmse_quat
             
+            # 수치 정보 라인 누적
+            line_str = f"{t_cal:<12.1f}{t_est:<12.1f}{rmse_acc:<20.4f}{rmse_mag:<18.4f}{rmse_quat:<22.4f}"
+            txt_report_lines.append(line_str)
+            
         print(f"   ↳ [스캔 완료] T_cal = {t_cal:5.1f}s | T_est 수집 루프 분석 완료")
         
     print("\n🎉 모든 파라미터 그리드 스캔이 완수되었습니다. 3D Surface 시각화를 개시합니다.")
@@ -332,10 +347,17 @@ def main():
     output_verify_dir = os.path.join(SCRIPT_DIR, "output")
     if not os.path.exists(output_verify_dir):
         os.makedirs(output_verify_dir)
+        
+    # 🎯 정량 수치 보고서 텍스트 파일 저장
+    txt_save_path = os.path.join(output_verify_dir, "window_analysis_report.txt")
+    with open(txt_save_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(txt_report_lines))
+    print(f"\n📂 [정량 수치 저장 성공] 윈도우 스캔 결과 보고서 저장 완료 ➔ {txt_save_path}")
+    
     save_path = os.path.join(output_verify_dir, "test_phase3_2_window_analysis_result.png")
     plt.savefig(save_path, dpi=300)
-    print(f"\n🎉 [시각화 완료] 3D Surface 플롯 저장 완료 ➔ {save_path}")
-    plt.close()
+    print(f"🎉 [시각화 완료] 3D Surface 플롯 저장 완료 ➔ {save_path}")
+    # plt.close()  # 대화형 창 동시 팝업을 위해 닫지 않음
     
     # 7. 대표 T_cal 크기별 3D 구면 정합 Scatter 대조 플로팅 (test_phase2 대조 형태)
     fig2 = plt.figure(figsize=(18, 11))
