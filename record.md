@@ -38,7 +38,7 @@ Yaw 축 회전의 무작위 오차에 종속적인 기존 자력계 평가 지�
 - 9가지 교차 비교 조합 구성:
   - 20면 평균 기반 4가지 피팅 (3-param, 6-param, 9-param Symmetric, 9-param Full)
   - 전체 원시 데이터 기반 5가지 피팅 (3-param, 6-param, 9-param Symmetric, 9-param Full, 융합형 가중 패널티 제4안)
-- 특히 융합형 가중 패널티 모델(J = J_all + lambda * J_face)은 전체 원시 데이터의 대규모 통계 정보와 20면체의 공간적 균일 분포 기하 정보를 동시에 반영하여 국부 오버피팅을 방지하도록 최적화 수식 모델을 정의함.
+- 6-parameter 및 9-parameter Symmetric 변환 행렬 W_mag 에 대해 Cholesky Parameterization (W = L * L^T, L 대각 성분 exp 처리) 수학적 명세를 적용하여, 솔버 내부에서 SPD(대칭 양의정부호)를 100% 강제하고 고유값의 음수/수축 방지를 보장하도록 설계를 고도화함.
 
 ### 5.4 실제 결과 및 인사이트
 - 문서 작성 성공적으로 완료.
