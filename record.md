@@ -180,4 +180,23 @@ Yaw 축 회전의 무작위 오차에 종속적인 기존 자력계 평가 지�
 - test_phase2_3_mag_cal.py 코드 수정 완료.
 - 가속도 downward aligned 상태에서 복각이 양수(+54.3 deg)로 정상 비교되어 3-param의 복각 오차가 0.1 deg 수준으로 정상 산출됨을 검증 완수.
 
+---
+
+## 13. 추가 수정 (v0.2.3 2_2 코드의 가속도 축 및 복각 평가 부호 통일)
+
+### 13.1 수정 이유
+2_2(test_phase2_2_mag_cal.py)와 2_3(test_phase2_3_mag_cal.py) 간의 가속도 틸트 보정 정렬 기준 및 복각 참값 부호 통일성을 갖추어 두 스크립트 간 결과의 완벽한 상호 연동 일관성을 획득하기 위함.
+
+### 13.2 수정 계획 및 예상 결과
+- 위치: verification_tool/test_phase2_2_mag_cal.py
+- 내용: calibrate_acc_12param 내 match_face(-d[i], normals)를 match_face(d[i], normals)로 변경하여 downward aligned 설정으로 통일하고, 복각 참값 DIP_TRUE를 -54.3에서 54.3으로 수정.
+- 예상 결과: 2_2에서 연산되는 3-param 보정 복각 평균 및 RMSE가 2_3의 결과 데이터와 일치하고 0.1 deg 수준의 고정밀도가 정상 렌더링됨.
+
+### 13.3 수정 내용
+- test_phase2_2_mag_cal.py L29, L277 부분의 수식 부호 교정.
+
+### 13.4 실제 결과
+- test_phase2_2_mag_cal.py 코드 수정 완료.
+
+
 

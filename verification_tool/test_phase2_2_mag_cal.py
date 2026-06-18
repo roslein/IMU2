@@ -26,7 +26,7 @@ def calibrate_acc_12param(d, normals, max_iter=30):
     best_indices = []
     
     for i in range(n_points):
-        best_idx, _ = icosahedron.match_face(-d[i], normals)
+        best_idx, _ = icosahedron.match_face(d[i], normals)
         matched_normals[i] = normals[best_idx]
         best_indices.append(best_idx)
         
@@ -273,8 +273,8 @@ def main():
             dip_errors = np.array(dip_list) - dip_ref
             dip_rmse = np.sqrt(np.mean(dip_errors**2))
             
-            # 인천 미추홀구 인하로 100 복각 참값 (-54.3 deg) 기반 절대 오차 RMSE
-            DIP_TRUE = -54.3
+            # 인천 미추홀구 인하로 100 복각 참값 (54.3 deg) 기반 절대 오차 RMSE (downward aligned 기준)
+            DIP_TRUE = 54.3
             dip_errors_true = np.array(dip_list) - DIP_TRUE
             dip_rmse_true = np.sqrt(np.mean(dip_errors_true**2))
             
