@@ -341,10 +341,10 @@ def main():
             pitch = np.degrees(np.arctan2(-acc_cal_sample[0], np.sqrt(acc_cal_sample[1]**2 + acc_cal_sample[2]**2)))
             print(f"   ↳ [실시간 자세] Roll: {roll:6.2f} deg | Pitch: {pitch:6.2f} deg")
             
-            # 0도 첫 거치 시점에 단 한 번만 안착 면 매칭 및 R_tilt_fixed 계산 후 고정
+            # 0도 첫 거치 시점에 단 한 번만 안착 면 매칭 및 R_tilt_fixed 계산 후 고정 (downward 기준 [0,0,-1] 정렬)
             if R_tilt_fixed is None:
                 best_idx, _ = icosahedron.match_face(-acc_cal_sample, rot_normals)
-                res_rot_fixed, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, 1.0]]), np.array([rot_normals[best_idx]]))
+                res_rot_fixed, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, -1.0]]), np.array([rot_normals[best_idx]]))
                 R_tilt_fixed = res_rot_fixed.as_matrix()
                 print(f"   ↳ [안착면 최초 매칭 완료] Face #{best_idx:02d} 법선 기준 틸트 보정 행렬 고정")
             
@@ -368,10 +368,10 @@ def main():
     # 5. 각 보정 모델 대입 후 틸트 보정 반영 Yaw Increment RMSE 및 Closed-loop 오차 계산
     print("\n📊 수집된 실측 데이터 기반 최종 Yaw 기하학적 정합성(Tilt 보정 반영) 연산 중...")
     
-    # 0번째 포지션 가속도 기준으로 안착 면 1회 판정 및 R_tilt_fixed 도출
+    # 0번째 포지션 가속도 기준으로 안착 면 1회 판정 및 R_tilt_fixed 도출 (downward 기준 [0,0,-1] 정렬)
     acc_cal_0 = W_acc @ (live_raw_acc_samples[0] - b_acc)
     best_idx, _ = icosahedron.match_face(-acc_cal_0, rot_normals)
-    res_rot_fixed, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, 1.0]]), np.array([rot_normals[best_idx]]))
+    res_rot_fixed, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, -1.0]]), np.array([rot_normals[best_idx]]))
     R_tilt_fixed_eval = res_rot_fixed.as_matrix()
     print(f"📡 [최종 평가 정합] 최초 0도 위치의 Face #{best_idx:02d} 안착 법선 기준 고정 틸트 보정 적용.")
     
