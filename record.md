@@ -271,19 +271,19 @@ Yaw 축 회전의 무작위 오차에 종속적인 기존 자력계 평가 지�
 - test_phase2_3_mag_cal.py 코드 수정 완료 및 크래시 에러 해결.
 
 ---
-
-## 18. 추가 수정 (v0.2.3 자이로 Z축 바이어스 단위 불정합 교정)
-
+ 
+## 18. 추가 수정 (v0.2.3 자이로 및 바이어스 rad/s 단위 정합 교정)
+ 
 ### 18.1 수정 이유
-gyro_bias_calibration.py 명세 상 dps 단위인 gyro_bias_z 와 raw.ino 펌웨어에서 rad/s 단위로 수신되는 gyro_raw[2] 간의 단위 불정합으로 인해 자이로 적분 시 정지 상태에서도 초당 약 234도에 달하는 폭발적인 누적 드리프트가 발생하는 런타임 오류를 해결하기 위함.
-
+gyro_bias_calibration.py를 통해 도출된 gyro_bias_z(b_gyro[2])는 rad/s 단위(b_gyro는 수집된 raw float 패킷의 평균이므로 rad/s가 맞음)이며, 실시간 시리얼 루프에서 수집되는 gyro_raw[2] 역시 rad/s 단위로 수신되는 것이 맞습니다. 그러나 이전 코드에서 gyro_bias_z에 pi / 180.0을 오곱하거나 실시간 적분부 내 gyro_raw[2]에 pi / 180.0을 잘못 이중 곱해 단위 불일치 혹은 축소 왜곡이 발생하는 현상을 완전 해결하기 위함.
+ 
 ### 18.2 수정 계획 및 예상 결과
 - 위치: verification_tool/test_phase2_3_mag_cal.py
-- 내용: gyro_bias_z 로드 시 dps 단위를 rad/s 단위로 변환해주는 수식 (gyro_bias_z = gyro_bias_z_dps * np.pi / 180.0)을 적용.
-- 예상 결과: 자이로 적분 궤적이 [0.0, 90.0, 180.0, 270.0, 360.0] 부근으로 정상 수렴하게 됨.
-
+- 내용: gyro_bias_z 와 gyro_raw[2] 모두 어떠한 라디안 변환 상수 배도 곱하지 않고, 순수 차감(gz_cal = gyro_raw[2] - gyro_bias_z)으로 환원하여 rad/s 단위 정합성을 확보함.
+- 예상 결과: 자이로 적분 궤적이 [0.0, 90.0, 180.0, 270.0, 360.0] 부근으로 완벽하게 수렴하게 됨.
+ 
 ### 18.3 수정 내용
-- test_phase2_3_mag_cal.py 내 gyro_bias_z 로드 조건에 단위 변환 수식 반영.
-
+- test_phase2_3_mag_cal.py 내 gyro_bias_z 로드식 롤백 및 실시간 적분부 내 이중 변환 누락/오곱 코드 제거.
+ 
 ### 18.4 실제 결과
 - test_phase2_3_mag_cal.py 코드 수정 완료. (실제 궤적 수렴 여부는 사용자의 로컬 쉘 실행을 통해 최종 검증)

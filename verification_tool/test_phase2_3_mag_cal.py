@@ -247,9 +247,8 @@ def main():
     gyro_param_path = os.path.join(IMU_ROOT, "calibration_tool", "output", "gyro_params.npz")
     if os.path.exists(gyro_param_path):
         gyro_params = np.load(gyro_param_path)
-        gyro_bias_z_dps = gyro_params["b_gyro"][2]
-        gyro_bias_z = gyro_bias_z_dps * np.pi / 180.0
-        print(f"✅ 자이로 Z축 바이어스 로드 성공: {gyro_bias_z_dps:.6f} dps -> {gyro_bias_z:.6f} rad/s")
+        gyro_bias_z = gyro_params["b_gyro"][2]
+        print(f"✅ 자이로 Z축 바이어스 로드 성공: {gyro_bias_z:.6f} rad/s")
     else:
         gyro_bias_z = 0.0
         print("⚠️  자이로 보정 파라미터가 유실되었습니다. 바이어스 0.0 적용.")
@@ -330,6 +329,7 @@ def main():
                     
                     # 실시간 회전구간 자이로 Z축 적분 누적 (rad -> deg)
                     if idx > 0:
+                        # 둘 다 이미 rad/s 단위이므로 아무것도 곱하지 않고 차감
                         gz_cal = gyro_raw[2] - gyro_bias_z
                         yaw_gyro_accum += gz_cal * 0.01
                         
