@@ -241,6 +241,9 @@ def main():
     acc_100s = data["acc"]
     mag_100s = data["mag"]
     
+    # 자력계 Z축 데이터 가속도계와 물리적 정렬 적용 (CHRONIC-IMU-01)
+    mag_100s[:, :, 2] = -mag_100s[:, :, 2]
+    
     acc_mean = np.mean(acc_100s, axis=1)
     mag_mean = np.mean(mag_100s, axis=1)
     mag_all = mag_100s.reshape(-1, 3)
@@ -340,7 +343,7 @@ def main():
             print(f"   ↳ [실시간 자세] Roll: {roll:6.2f} deg | Pitch: {pitch:6.2f} deg")
             
             # 각 보정 모델별 실시간 틸트 보정(Tilt Compensation) 전후 Yaw 실시간 출력
-            g_unit_sample = acc_cal_sample / np.linalg.norm(acc_cal_sample)
+            g_unit_sample = -acc_cal_sample / np.linalg.norm(acc_cal_sample)
             res_rot_sample, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, 1.0]]), np.array([g_unit_sample]))
             R_tilt_sample = res_rot_sample.as_matrix()
             
@@ -379,7 +382,7 @@ def main():
             yaws_est_raw_list.append(yaw_raw)
             
             # 2. SVD 틸트 보정(Tilt Compensation) 적용 후 Yaw 계산
-            g_unit_sample = acc_cal_sample / np.linalg.norm(acc_cal_sample)
+            g_unit_sample = -acc_cal_sample / np.linalg.norm(acc_cal_sample)
             res_rot_sample, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, 1.0]]), np.array([g_unit_sample]))
             R_tilt_sample = res_rot_sample.as_matrix()
             
