@@ -326,6 +326,7 @@ def main():
     live_raw_acc_samples = []
     live_raw_mag_samples = []
     
+    R_tilt_fixed = None
     try:
         for idx, angle in enumerate(target_angles):
             input(f"\n👉 [단계 {idx+1}/5] 센서를 각도기 기준 {angle:3.1f}도에 거치하고 [Enter]를 누르십시오...")
@@ -340,10 +341,12 @@ def main():
             pitch = np.degrees(np.arctan2(-acc_cal_sample[0], np.sqrt(acc_cal_sample[1]**2 + acc_cal_sample[2]**2)))
             print(f"   ↳ [실시간 자세] Roll: {roll:6.2f} deg | Pitch: {pitch:6.2f} deg")
             
-            # 각 보정 모델별 실시간 틸트 보정(Tilt Compensation) 전후 Yaw 실시간 출력
-            g_unit_sample = -acc_cal_sample / np.linalg.norm(acc_cal_sample)
-            res_rot_sample, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, 1.0]]), np.array([g_unit_sample]))
-            R_tilt_sample = res_rot_sample.as_matrix()
+            # 0도 첫 거치 시점에 단 한 번만 안착 면 매칭 및 R_tilt_fixed 계산 후 고정
+            if R_tilt_fixed is None:
+                best_idx, _ = icosahedron.match_face(-acc_cal_sample, rot_normals)
+                res_rot_fixed, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, 1.0]]), np.array([rot_normals[best_idx]]))
+                R_tilt_fixed = res_rot_fixed.as_matrix()
+                print(f"   ↳ [안착면 최초 매칭 완료] Face #{best_idx:02d} 법선 기준 틸트 보정 행렬 고정")
             
             for r in results:
                 W_mag = r["W_mag"]
@@ -351,7 +354,7 @@ def main():
                 mag_cal_sample = W_mag @ (mean_mag_raw - b_mag)
                 yaw_raw_sample = np.degrees(np.arctan2(mag_cal_sample[1], mag_cal_sample[0]))
                 
-                mag_cal_ned_sample = R_tilt_sample @ mag_cal_sample
+                mag_cal_ned_sample = R_tilt_fixed @ mag_cal_sample
                 yaw_tilt_sample = np.degrees(np.arctan2(mag_cal_ned_sample[1], mag_cal_ned_sample[0]))
                 print(f"      ↳ {r['algo_name'].strip():<24} ➔ Yaw_raw: {yaw_raw_sample:7.2f} deg | Yaw_tilt: {yaw_tilt_sample:7.2f} deg")
                 
@@ -364,6 +367,14 @@ def main():
     
     # 5. 각 보정 모델 대입 후 틸트 보정 반영 Yaw Increment RMSE 및 Closed-loop 오차 계산
     print("\n📊 수집된 실측 데이터 기반 최종 Yaw 기하학적 정합성(Tilt 보정 반영) 연산 중...")
+    
+    # 0번째 포지션 가속도 기준으로 안착 면 1회 판정 및 R_tilt_fixed 도출
+    acc_cal_0 = W_acc @ (live_raw_acc_samples[0] - b_acc)
+    best_idx, _ = icosahedron.match_face(-acc_cal_0, rot_normals)
+    res_rot_fixed, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, 1.0]]), np.array([rot_normals[best_idx]]))
+    R_tilt_fixed_eval = res_rot_fixed.as_matrix()
+    print(f"📡 [최종 평가 정합] 최초 0도 위치의 Face #{best_idx:02d} 안착 법선 기준 고정 틸트 보정 적용.")
+    
     for r in results:
         W_mag = r["W_mag"]
         b_mag = r["b_mag"]
@@ -379,12 +390,8 @@ def main():
             yaw_raw = np.arctan2(mag_cal_sample[1], mag_cal_sample[0])
             yaws_est_raw_list.append(yaw_raw)
             
-            # 2. SVD 틸트 보정(Tilt Compensation) 적용 후 Yaw 계산
-            g_unit_sample = -acc_cal_sample / np.linalg.norm(acc_cal_sample)
-            res_rot_sample, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, 1.0]]), np.array([g_unit_sample]))
-            R_tilt_sample = res_rot_sample.as_matrix()
-            
-            mag_cal_ned = R_tilt_sample @ mag_cal_sample
+            # 2. 안착 면 법선 기준 고정 틸트 보정(Tilt Compensation) 적용 후 Yaw 계산
+            mag_cal_ned = R_tilt_fixed_eval @ mag_cal_sample
             yaw_tilt = np.arctan2(mag_cal_ned[1], mag_cal_ned[0])
             yaws_est_tilt_list.append(yaw_tilt)
             
