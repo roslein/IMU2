@@ -327,7 +327,7 @@ def main():
     output_dir = os.path.join(SCRIPT_DIR, "output")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    report_path = os.path.join(output_dir, "mag_calibration_compare_report.txt")
+    report_path = os.path.join(output_dir, "mag_calibration_compare_report_v0.2.2.txt")
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report_text)
     print(f"📂 [보고서 저장 완료] ➔ {report_path}")

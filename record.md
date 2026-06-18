@@ -122,3 +122,22 @@ Yaw 축 회전의 무작위 오차에 종속적인 기존 자력계 평가 지�
 
 ### 9.4 실제 결과
 - test_phase2_3_mag_cal.py 코드 수정 완료 및 깃허브 푸시 완료.
+
+---
+
+## 10. 추가 수정 (v0.2.3 보고서 저장 경로 분리 및 유실 방지)
+
+### 10.1 수정 이유
+2_2 버전과 2_3 버전의 다기준 보정 비교 보고서 파일명이 mag_calibration_compare_report.txt 로 충돌하여 덮어쓰기 유실이 발생하는 문제를 방지하기 위함.
+
+### 10.2 수정 계획 및 예상 결과
+- 위치: verification_tool/test_phase2_2_mag_cal.py 및 verification_tool/test_phase2_3_mag_cal.py
+- 예상 결과: 각각 _v0.2.2.txt 및 _v0.2.3.txt로 파일 저장명이 변경되어 분리 보존됨.
+
+### 10.3 수정 내용
+- test_phase2_2_mag_cal.py 내 저장 파일명을 mag_calibration_compare_report_v0.2.2.txt 로 수정.
+- test_phase2_3_mag_cal.py 내 저장 파일명을 mag_calibration_compare_report_v0.2.3.txt 로 수정.
+- 로컬의 기존 mag_calibration_compare_report.txt 파일을 mag_calibration_compare_report_v0.2.2.txt 로 Rename 조치.
+
+### 10.4 실제 결과
+- 코드 수정 및 파일명 백업 완료 후 깃허브 푸시 완료.
