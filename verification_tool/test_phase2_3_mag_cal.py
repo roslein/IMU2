@@ -1,9 +1,10 @@
 """
 Real-world IMU Phase 2.3 Magnetometer Calibration Multi-Criteria Decision Solver
-목적: 3가지 자력계 보정 모델(3-param, 6-param Cholesky, 9-param Symmetric Cholesky)을
+목적: 3가지 자력계 보정 모델(3-param, 6-param Cholesky, 9-param SPD)을
       전체 원시 데이터(collected_data_100s.npz) 기반으로 피팅하고,
       각도기(Protractor) 직접 대조 실시간 시리얼 데이터 수집 루프를 기동하여
-      Yaw Closed-loop 및 Increment RMSE를 실측 기반으로 엄격하게 사전식 정렬 평가 및 최종 낙찰합니다.
+      Roll, Pitch 및 틸트 보정(Tilt Compensation) 전후 Yaw 모니터링을 포함한
+      Yaw Closed-loop 및 Increment RMSE를 실측 기반으로 사전식 정렬 평가 및 최종 낙찰합니다.
 """
 
 import os
@@ -134,8 +135,8 @@ def calibrate_mag_6param(mag_raw):
         return W_est, b_est
     return preconditioned_solver(mag_raw, solver)
 
-# 9-parameter Symmetric 자력계 보정 솔버 (Cholesky SPD 제약 적용)
-def calibrate_mag_9param_sym(mag_raw):
+# 9-parameter SPD 자력계 보정 솔버 (Cholesky SPD 제약 적용)
+def calibrate_mag_9param_spd(mag_raw):
     def solver(d):
         def residuals(p, x):
             b = p[:3]
@@ -150,17 +151,17 @@ def calibrate_mag_9param_sym(mag_raw):
         return W_est, b_est
     return preconditioned_solver(mag_raw, solver)
 
-# 실시간 시리얼 데이터 수집 헬퍼 함수
-def collect_live_samples(ser, sample_count=100):
+# 실시간 시리얼 데이터 수집 헬퍼 함수 (가속도 및 자력 동시 획득)
+def collect_live_acc_mag_samples(ser, sample_count=100):
     byte_buffer = bytearray()
+    collected_acc = []
     collected_mag = []
     
     ser.reset_input_buffer()
     start_time = time.time()
     
-    while len(collected_mag) < sample_count:
+    while len(collected_acc) < sample_count:
         if time.time() - start_time > 5.0:
-            # 5초 이상 수집이 지연될 경우 예외 처리
             print("\n⚠️  시리얼 데이터 수집 타임아웃 발생.")
             break
             
@@ -192,22 +193,24 @@ def collect_live_samples(ser, sample_count=100):
                 continue
                 
             floats = struct.unpack('<9f', packet[1:37])
+            acc_raw = np.array(floats[0:3])
             mag_raw = np.array(floats[6:9])
             
             # 자력계 Z축 데이터 가속도계와 물리적 정렬 적용
             mag_raw[2] = -mag_raw[2]
             
+            collected_acc.append(acc_raw)
             collected_mag.append(mag_raw)
             byte_buffer = byte_buffer[PACKET_SIZE:]
             
-            progress = len(collected_mag)
+            progress = len(collected_acc)
             bar = "=" * (progress * 20 // sample_count) + " " * (20 - progress * 20 // sample_count)
             sys.stdout.write(f"\r📥 데이터 수집 중: [{bar}] {progress}/{sample_count} 완료")
             sys.stdout.flush()
             
         time.sleep(0.001)
     print()
-    return np.mean(collected_mag, axis=0)
+    return np.mean(collected_acc, axis=0), np.mean(collected_mag, axis=0)
 
 
 def main():
@@ -217,6 +220,16 @@ def main():
     print("=" * 70)
     print(" 🎯 Magnetometer Calibration Protractor-Guided Decision Solver (Phase 2.3)")
     print("=" * 70)
+    
+    # 가속도계 보정 파라미터 로드
+    acc_param_path = os.path.join(IMU_ROOT, "calibration_tool", "output", "acc_params.npz")
+    if not os.path.exists(acc_param_path):
+        print(f"❌ 가속도계 보정 파라미터가 유실되었습니다: {acc_param_path}")
+        sys.exit(1)
+    acc_params = np.load(acc_param_path)
+    W_acc = acc_params["W"]
+    b_acc = acc_params["b"]
+    print("✅ 가속도계 보정 파라미터 로드 완료.")
     
     # 1. 데이터 로드 (collected_data_100s.npz 사용)
     data_path = os.path.join(SCRIPT_DIR, "output", "collected_data_100s.npz")
@@ -234,7 +247,7 @@ def main():
     
     # 2. 가속도계 12-parameter 정합 완료
     rot_normals = icosahedron.get_rotated_normals()
-    W_acc, b_acc, _ = calibrate_acc_12param(acc_mean, rot_normals)
+    _, _, _ = calibrate_acc_12param(acc_mean, rot_normals) # 12-param 피팅 검증용 기하 도출
     acc_cal_mean = (W_acc @ (acc_mean - b_acc).T).T
     acc_unit_mean = acc_cal_mean / np.linalg.norm(acc_cal_mean, axis=1, keepdims=True)
     
@@ -244,7 +257,7 @@ def main():
     combinations = [
         (1, "전체 원시", "3-param (Offset Only)", lambda: calibrate_mag_3param(mag_all)),
         (2, "전체 원시", "6-param (Diagonal W)", lambda: calibrate_mag_6param(mag_all)),
-        (3, "전체 원시", "9-param Symmetric   ", lambda: calibrate_mag_9param_sym(mag_all))
+        (3, "전체 원시", "9-param SPD           ", lambda: calibrate_mag_9param_spd(mag_all))
     ]
     
     print("\n⚡ 3가지 자력계 보정 후보군 피팅 가동...")
@@ -309,50 +322,95 @@ def main():
     print("-" * 60)
     
     target_angles = [0.0, 90.0, 180.0, 270.0, 360.0]
+    live_raw_acc_samples = []
     live_raw_mag_samples = []
     
     try:
         for idx, angle in enumerate(target_angles):
             input(f"\n👉 [단계 {idx+1}/5] 센서를 각도기 기준 {angle:3.1f}도에 거치하고 [Enter]를 누르십시오...")
-            # 1.0초(100패킷) 동안 실시간 자력 수집하여 평균화
-            mean_mag_raw = collect_live_samples(ser, sample_count=100)
+            # 1.0초(100패킷) 동안 실시간 가속도/자력 수집하여 평균화
+            mean_acc_raw, mean_mag_raw = collect_live_acc_mag_samples(ser, sample_count=100)
+            live_raw_acc_samples.append(mean_acc_raw)
             live_raw_mag_samples.append(mean_mag_raw)
-            print(f"   ↳ 수집 완료. Raw 지자기 벡터: {mean_mag_raw}")
+            
+            # 가속도 보정을 통한 물리 거치 오경사(Roll/Pitch) 실시간 계산
+            acc_cal_sample = W_acc @ (mean_acc_raw - b_acc)
+            roll = np.degrees(np.arctan2(acc_cal_sample[1], acc_cal_sample[2]))
+            pitch = np.degrees(np.arctan2(-acc_cal_sample[0], np.sqrt(acc_cal_sample[1]**2 + acc_cal_sample[2]**2)))
+            print(f"   ↳ [실시간 자세] Roll: {roll:6.2f} deg | Pitch: {pitch:6.2f} deg")
+            
+            # 각 보정 모델별 실시간 틸트 보정(Tilt Compensation) 전후 Yaw 실시간 출력
+            g_unit_sample = acc_cal_sample / np.linalg.norm(acc_cal_sample)
+            res_rot_sample, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, 1.0]]), np.array([g_unit_sample]))
+            R_tilt_sample = res_rot_sample.as_matrix()
+            
+            for r in results:
+                W_mag = r["W_mag"]
+                b_mag = r["b_mag"]
+                mag_cal_sample = W_mag @ (mean_mag_raw - b_mag)
+                yaw_raw_sample = np.degrees(np.arctan2(mag_cal_sample[1], mag_cal_sample[0]))
+                
+                mag_cal_ned_sample = R_tilt_sample @ mag_cal_sample
+                yaw_tilt_sample = np.degrees(np.arctan2(mag_cal_ned_sample[1], mag_cal_ned_sample[0]))
+                print(f"      ↳ {r['algo_name'].strip():<24} ➔ Yaw_raw: {yaw_raw_sample:7.2f} deg | Yaw_tilt: {yaw_tilt_sample:7.2f} deg")
+                
     finally:
         ser.close()
         print("\n🔌 시리얼 포트 연결을 안전하게 해제했습니다.")
         
-    live_raw_mag_samples = np.array(live_raw_mag_samples) # (5, 3)
+    live_raw_acc_samples = np.array(live_raw_acc_samples)
+    live_raw_mag_samples = np.array(live_raw_mag_samples)
     
-    # 5. 각 보정 모델 대입 후 Yaw Increment RMSE 및 Closed-loop 오차 계산
-    print("\n📊 수집된 실측 데이터 기반 Yaw 기하학적 정합성 연산 중...")
+    # 5. 각 보정 모델 대입 후 틸트 보정 반영 Yaw Increment RMSE 및 Closed-loop 오차 계산
+    print("\n📊 수집된 실측 데이터 기반 최종 Yaw 기하학적 정합성(Tilt 보정 반영) 연산 중...")
     for r in results:
         W_mag = r["W_mag"]
         b_mag = r["b_mag"]
         
-        # 대표 raw 벡터 5개 보정 대입
-        mag_cal_rot = (W_mag @ (live_raw_mag_samples - b_mag).T).T
+        yaws_est_raw_list = []
+        yaws_est_tilt_list = []
         
-        # Yaw 계산 (수평 기준 지자기 투사 atan2(y, x) 사용)
-        yaws_est = np.arctan2(mag_cal_rot[:, 1], mag_cal_rot[:, 0])
-        
+        for k in range(5):
+            acc_cal_sample = W_acc @ (live_raw_acc_samples[k] - b_acc)
+            mag_cal_sample = W_mag @ (live_raw_mag_samples[k] - b_mag)
+            
+            # 1. 틸트 보정 전 Yaw 계산 (Raw)
+            yaw_raw = np.arctan2(mag_cal_sample[1], mag_cal_sample[0])
+            yaws_est_raw_list.append(yaw_raw)
+            
+            # 2. SVD 틸트 보정(Tilt Compensation) 적용 후 Yaw 계산
+            g_unit_sample = acc_cal_sample / np.linalg.norm(acc_cal_sample)
+            res_rot_sample, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, 1.0]]), np.array([g_unit_sample]))
+            R_tilt_sample = res_rot_sample.as_matrix()
+            
+            mag_cal_ned = R_tilt_sample @ mag_cal_sample
+            yaw_tilt = np.arctan2(mag_cal_ned[1], mag_cal_ned[0])
+            yaws_est_tilt_list.append(yaw_tilt)
+            
         # 0도 기준 unwrapped 정렬 적용
-        yaws_est_unwrapped = np.unwrap(yaws_est)
-        offset = yaws_est_unwrapped[0] - np.radians(target_angles[0])
-        yaws_est_aligned = np.degrees(yaws_est_unwrapped - offset)
+        # 틸트 보정 전 정렬
+        yaws_est_raw_unwrapped = np.unwrap(yaws_est_raw_list)
+        offset_raw = yaws_est_raw_unwrapped[0] - np.radians(target_angles[0])
+        yaws_est_raw_aligned = np.degrees(yaws_est_raw_unwrapped - offset_raw)
         
-        # 360도 Closed-loop 폐합 오차 계산
-        closed_loop_err = np.abs(yaws_est_aligned[-1] - 360.0)
+        # 틸트 보정 후 정렬
+        yaws_est_tilt_unwrapped = np.unwrap(yaws_est_tilt_list)
+        offset_tilt = yaws_est_tilt_unwrapped[0] - np.radians(target_angles[0])
+        yaws_est_tilt_aligned = np.degrees(yaws_est_tilt_unwrapped - offset_tilt)
         
-        # Yaw Increment RMSE 계산 (ideal 각도 시퀀스 대조)
-        yaw_errors = yaws_est_aligned - target_angles
+        # 360도 Closed-loop 폐합 오차 계산 (틸트 보정 후 기준)
+        closed_loop_err = np.abs(yaws_est_tilt_aligned[-1] - 360.0)
+        
+        # Yaw Increment RMSE 계산 (ideal 각도 시퀀스 대조, 틸트 보정 후 기준)
+        yaw_errors = yaws_est_tilt_aligned - target_angles
         yaw_rmse = np.sqrt(np.mean(yaw_errors**2))
         
         r["closed_loop_err"] = closed_loop_err
         r["yaw_rmse"] = yaw_rmse
-        r["yaws_est_aligned"] = yaws_est_aligned
+        r["yaws_est_aligned"] = yaws_est_tilt_aligned
+        r["yaws_est_raw_aligned"] = yaws_est_raw_aligned
         
-    # 6. 복각 참값 입력 획득 및 20개 포지션 절대 오차 RMSE 계산
+    # 6. 복각 참값 입력 획득 및 20개 포지션 절대 오차 RMSE 계산 (기본 디폴트 -54.3000으로 북반구 음수 부호 고정)
     print("\n" + "=" * 60)
     dip_input = input("👉 인천 미추홀구 복각 참값 입력 (디폴트: -54.3000): ").strip()
     dip_true = float(dip_input) if dip_input else -54.3000
@@ -372,7 +430,7 @@ def main():
     report_lines.append("=" * 140)
     report_lines.append(" 🎯 Magnetometer Calibration Lexicographic Multi-Criteria Report (v0.2.3) ")
     report_lines.append("=" * 140)
-    report_lines.append("Yaw Evaluation Mode: Protractor Mode (각도기 직접 대조)")
+    report_lines.append("Yaw Evaluation Mode: Protractor Mode (각도기 직접 대조, SVD 틸트 보정 반영)")
     report_lines.append("Data Source: collected_data_100s.npz (전체 원시 30,000점 피팅)")
     report_lines.append(f"True Dip Angle Reference: {dip_true:.4f} deg")
     report_lines.append("-" * 140)
@@ -390,12 +448,14 @@ def main():
     report_lines.append(f"   - 20면 복각 절대 오차 RMSE:  {best_res['dip_rmse_true']:.4f} deg (평균 복각: {best_res['dip_ref']:.4f} deg)")
     report_lines.append(f"   - 20면 지자기 Norm RMSE:     {best_res['norm_rmse']:.6f} (표준편차: {best_res['norm_std']:.6f})")
     
-    # 각도별 디테일 상세 출력 추가
+    # 각도별 디테일 상세 출력 추가 (틸트 보정 전후 대조)
     report_lines.append("-" * 140)
     report_lines.append("🔍 각 보정 모델별 각도기 정렬 Yaw 계산 각도 (unwrapped, deg):")
     for r in results:
-        angle_strs = ", ".join([f"{a:6.2f}" for a in r["yaws_est_aligned"]])
-        report_lines.append(f"   ↳ {r['algo_name'].strip():<24} ➔ [{angle_strs}]")
+        angle_strs_raw = ", ".join([f"{a:6.2f}" for a in r["yaws_est_raw_aligned"]])
+        angle_strs_tilt = ", ".join([f"{a:6.2f}" for a in r["yaws_est_aligned"]])
+        report_lines.append(f"   ↳ {r['algo_name'].strip():<20} ➔ Raw : [{angle_strs_raw}]")
+        report_lines.append(f"   ↳ {' ' * 20} ➔ Tilt: [{angle_strs_tilt}]")
         
     report_lines.append("-" * 140)
     report_lines.append(f"⚙️ 낙찰된 최적 W_mag:\n{best_res['W_mag']}")

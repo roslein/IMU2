@@ -94,11 +94,13 @@ Yaw 축 회전의 무작위 오차에 종속적인 기존 자력계 평가 지�
 
 ### 8.3 수정 내용
 - test_phase2_3_mag_cal.py 파일 신규 작성.
-- combinations에서 9-param Full 및 융합형을 소거하고 전체 원시 데이터(30,000점) 기반 3가지 모델만 후보군으로 수립.
-- 시리얼 통신을 통해 5개 타겟 회전 각도 엔터 트리거별 실시간 100샘플 raw 자력 평균화 수집 모듈 구현.
-- 각 보정 파라미터 W_mag, b_mag를 적용하여 atan2(y, x) 기반 실측 Yaw closed-loop 및 increment 오차 계산식 탑재.
-- dip_true 입력을 받아 20면 복각 RMSE 계산 및 Lexicographic Multi-Criteria 정렬 선택 적용.
+- combinations 후보군 중 9-param Full 및 융합형을 소거하고 전체 원시 데이터(30,000점) 입력 기반 3가지 모델(3-param, 6-param Cholesky, 9-param SPD)만 최종 수립.
+- 복각 참값 DIP_TRUE의 북반구 음수 부호 기본값(-54.3) 고정 적용으로 109도 부호 반전 오차 원천 해결.
+- 시리얼 통신을 통해 5개 타겟 각도 엔터 트리거별 실시간 100샘플 raw 자력 및 가속도를 함께 수집하는 모듈 구현.
+- 가속도계 보정본(acc_params.npz)을 로드해 실시간 Roll, Pitch를 산출하고, 실측 중력 벡터 g_unit을 [0, 0, 1]로 회전시키는 틸트 보정(Tilt Compensation) R_tilt를 SVD(align_vectors)로 실시간 연산.
+- 틸트 보정 전후(Raw, Tilt)의 Yaw를 각각 추적하여 각도기 타겟 눈금 대비 Closed-loop 오차 및 Yaw Increment RMSE를 도출.
+- 20면 평균 데이터 기반의 Norm RMSE/Std 및 복각 RMSE 테이블과 실측 각도기 Yaw 결과를 병합 출력하여 다기준 사전식 정렬(Lexicographic Order)로 최종 보정 모델 자동 낙찰.
 - 낙찰된 파라미터를 calibration_tool/output/mag_params.npz 로 자동 백업 연동.
 
 ### 8.4 실제 결과
-- test_phase2_3_mag_cal.py 소스코드 작성 완료 및 실행 대기.
+- test_phase2_3_mag_cal.py 소스코드 작성 완료 및 틸트 보정이 가미된 실측 데이터 수집 파이프라인 빌드 완료.
