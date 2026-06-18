@@ -247,10 +247,10 @@ def main():
     gyro_param_path = os.path.join(IMU_ROOT, "calibration_tool", "output", "gyro_params.npz")
     if os.path.exists(gyro_param_path):
         gyro_params = np.load(gyro_param_path)
-        gyro_bias_z = gyro_params["b_gyro"][2]
-        print(f"✅ 자이로 Z축 바이어스 로드 성공: {gyro_bias_z:.6f} rad/s")
+        gyro_bias = gyro_params["b_gyro"]
+        print(f"✅ 자이로 3축 바이어스 로드 성공: [{gyro_bias[0]:.6f}, {gyro_bias[1]:.6f}, {gyro_bias[2]:.6f}] rad/s")
     else:
-        gyro_bias_z = 0.0
+        gyro_bias = np.zeros(3)
         print("⚠️  자이로 보정 파라미터가 유실되었습니다. 바이어스 0.0 적용.")
 
     # 실시간 시리얼 포트 연결
@@ -329,8 +329,13 @@ def main():
                     
                     # 실시간 회전구간 자이로 Z축 적분 누적 (rad -> deg)
                     if idx > 0:
-                        # 둘 다 이미 rad/s 단위이므로 아무것도 곱하지 않고 차감
-                        gz_cal = gyro_raw[2] - gyro_bias_z
+                        # 3축 자이로에서 바이어스 차감 후 틸트 보정 정합 행렬(R_tilt_fixed)을 곱해 지구 수직축(Z) 각속도 추출
+                        gyro_zero = gyro_raw - gyro_bias
+                        if R_tilt_fixed is not None:
+                            gyro_cal = R_tilt_fixed @ gyro_zero
+                        else:
+                            gyro_cal = gyro_zero
+                        gz_cal = gyro_cal[2]
                         yaw_gyro_accum += gz_cal * 0.01
                         
                     # 실시간 거치 물리 자세 계산
