@@ -196,8 +196,7 @@ def collect_live_acc_mag_samples(ser, sample_count=100):
             acc_raw = np.array(floats[0:3])
             mag_raw = np.array(floats[6:9])
             
-            # 자력계 Z축 데이터 가속도계와 물리적 정렬 적용
-            mag_raw[2] = -mag_raw[2]
+            # 자력계 Z축 데이터는 ino단에서 이미 반전 완료됨 (이중 반전 방지 위해 제거)
             
             collected_acc.append(acc_raw)
             collected_mag.append(mag_raw)
@@ -241,8 +240,7 @@ def main():
     acc_100s = data["acc"]
     mag_100s = data["mag"]
     
-    # 자력계 Z축 데이터 가속도계와 물리적 정렬 적용 (CHRONIC-IMU-01)
-    mag_100s[:, :, 2] = -mag_100s[:, :, 2]
+    # 자력계 Z축 데이터는 ino단에서 이미 반전 완료됨 (이중 반전 방지 위해 제거)
     
     acc_mean = np.mean(acc_100s, axis=1)
     mag_mean = np.mean(mag_100s, axis=1)
