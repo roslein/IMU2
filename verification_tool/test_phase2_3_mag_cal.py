@@ -253,6 +253,21 @@ def main():
         gyro_bias_z = 0.0
         print("⚠️  자이로 보정 파라미터가 유실되었습니다. 바이어스 0.0 적용.")
 
+    # 실시간 시리얼 포트 연결
+    print("\n📶 시리얼 포트 연결 시도 중...")
+    port = find_arduino_port()
+    if not port:
+        print("❌ 연결된 아두이노 장치(COM Port)를 찾을 수 없습니다.")
+        sys.exit(1)
+        
+    try:
+        ser = serial.Serial(port, 115200, timeout=1.0)
+        time.sleep(2)
+        print(f"✅ 포트 연결 성공: {port}")
+    except Exception as e:
+        print(f"❌ 포트 연결 실패: {e}")
+        sys.exit(1)
+
     print("\n" + "=" * 60)
     print(" 🛠 각도기(Protractor Guided) + 자이로 실시간 병행 수집 개시")
     print("=" * 60)

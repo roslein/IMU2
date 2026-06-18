@@ -252,6 +252,25 @@ Yaw 축 회전의 무작위 오차에 종속적인 기존 자력계 평가 지�
 ### 16.4 실제 결과
 - test_phase2_3_mag_cal.py 코드 수정 완료.
 
+---
+
+## 17. 추가 수정 (v0.2.3 2_3 시리얼 연결 코드 누락 버그 디버깅)
+
+### 17.1 수정 이유
+16절 자이로 융합 리팩토링 진행 도중 헬퍼 함수 삭제 과정에서 메인 루프 내 시리얼 포트 연결 및 ser 변수 정의부가 오성도 유실되어 NameError: name 'ser' is not defined 런타임 크래시가 유발된 것을 복구하기 위함.
+
+### 17.2 수정 계획 및 예상 결과
+- 위치: verification_tool/test_phase2_3_mag_cal.py
+- 내용: L254 뒤편에 find_arduino_port() 및 serial.Serial(port)를 호출하는 연결 코드를 다시 복구 주입.
+- 예상 결과: 런타임 NameError가 완전히 제거되어 시리얼 통신 연결이 정상 확보됨.
+
+### 17.3 수정 내용
+- test_phase2_3_mag_cal.py L254 부근 시리얼 연결 셋업 코드 이식 완료.
+
+### 17.4 실제 결과
+- test_phase2_3_mag_cal.py 코드 수정 완료 및 크래시 에러 해결.
+
+
 
 
 
