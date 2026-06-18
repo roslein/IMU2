@@ -110,10 +110,10 @@ void loop() {
     float ay = accelData.yData;
     float az = accelData.zData;
 
-    // [자이로]: 500dps 감도 ➔ 라디안/s 물리 단위 변환 및 9-Parameter 보정 적용
-    float gx_raw = (gyroData.xData * 0.0175) * (PI / 180.0);
-    float gy_raw = (gyroData.yData * 0.0175) * (PI / 180.0);
-    float gz_raw = (gyroData.zData * 0.0175) * (PI / 180.0);
+    // [자이로]: 500dps 감도(라이브러리가 mdps 단위로 반환하므로 1000으로 나눔) ➔ 라디안/s 물리 단위 변환 및 9-Parameter 보정 적용
+    float gx_raw = (gyroData.xData / 1000.0) * (PI / 180.0);
+    float gy_raw = (gyroData.yData / 1000.0) * (PI / 180.0);
+    float gz_raw = (gyroData.zData / 1000.0) * (PI / 180.0);
 
     float gx_cal = GYRO_W[0][0] * (gx_raw - GYRO_B[0]) + GYRO_W[0][1] * (gy_raw - GYRO_B[1]) + GYRO_W[0][2] * (gz_raw - GYRO_B[2]);
     float gy_cal = GYRO_W[1][0] * (gx_raw - GYRO_B[0]) + GYRO_W[1][1] * (gy_raw - GYRO_B[1]) + GYRO_W[1][2] * (gz_raw - GYRO_B[2]);

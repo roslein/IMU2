@@ -118,10 +118,10 @@ void loop() {
     float ay = accelData.yData;
     float az = accelData.zData;
 
-    // [자이로]: 500dps 감도(17.50 mdps/LSB) ➔ 라디안/s 물리 단위 변환
-    float gx = (gyroData.xData * 0.0175) * (PI / 180.0);
-    float gy = (gyroData.yData * 0.0175) * (PI / 180.0);
-    float gz = (gyroData.zData * 0.0175) * (PI / 180.0);
+    // [자이로]: 500dps 감도(라이브러리가 mdps 단위로 반환하므로 1000으로 나눔) ➔ 라디안/s 물리 단위 변환
+    float gx = (gyroData.xData / 1000.0) * (PI / 180.0);
+    float gy = (gyroData.yData / 1000.0) * (PI / 180.0);
+    float gz = (gyroData.zData / 1000.0) * (PI / 180.0);
 
     // [자력계]: 18-bit Unsigned ➔ Zero-center Signed 정렬
     float mx = (float)rawMx - 131072.0;
