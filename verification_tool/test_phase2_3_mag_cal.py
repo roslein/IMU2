@@ -243,15 +243,8 @@ def main():
         except Exception as e:
             print(f"   ↳ [피팅 실패] {algo_name.strip()} ➔ 에러: {e}")
             
-    # 자이로 Z축 바이어스 로드
-    gyro_param_path = os.path.join(IMU_ROOT, "calibration_tool", "output", "gyro_params.npz")
-    if os.path.exists(gyro_param_path):
-        gyro_params = np.load(gyro_param_path)
-        gyro_bias = gyro_params["b_gyro"]
-        print(f"✅ 자이로 3축 바이어스 로드 성공: [{gyro_bias[0]:.6f}, {gyro_bias[1]:.6f}, {gyro_bias[2]:.6f}] rad/s")
-    else:
-        gyro_bias = np.zeros(3)
-        print("⚠️  자이로 보정 파라미터가 유실되었습니다. 바이어스 0.0 적용.")
+    # 실시간 자이로 바이어스 초기화 (1단계 0도 안착 시 자동 갱신됨)
+    gyro_bias = np.zeros(3)
 
     # 실시간 시리얼 포트 연결
     print("\n📶 시리얼 포트 연결 시도 중...")
@@ -293,6 +286,7 @@ def main():
             
             acc_window = []
             mag_window = []
+            gyro_window = []
             
             while True:
                 try:
@@ -345,9 +339,11 @@ def main():
                     
                     acc_window.append(acc_raw)
                     mag_window.append(mag_raw)
+                    gyro_window.append(gyro_raw)
                     if len(acc_window) > 100:
                         acc_window.pop(0)
                         mag_window.pop(0)
+                        gyro_window.pop(0)
                         
                     # 실시간 틸트 보정 모니터링 (3-param 기준)
                     if len(results) > 0 and R_tilt_fixed is not None:
@@ -383,8 +379,10 @@ def main():
             live_raw_mag_samples.append(mean_mag_raw)
             live_gyro_integrated_angles.append(np.degrees(yaw_gyro_accum))
             
-            # 0도 첫 거치 시점에 단 한 번만 안착 면 매칭 및 R_tilt_fixed 계산 후 고정 (downward 기준 [0,0,-1] 정렬)
+            # 0도 첫 거치 시점에 단 한 번만 안착 면 매칭, R_tilt_fixed 계산 및 실시간 자이로 바이어스 갱신 후 고정 (downward 기준 [0,0,-1] 정렬)
             if R_tilt_fixed is None:
+                gyro_bias = np.mean(gyro_window, axis=0)
+                print(f"🔥 [자이로 바이어스 실시간 갱신 완료] gyro_bias (rad/s): {gyro_bias}")
                 acc_cal_sample = W_acc @ (mean_acc_raw - b_acc)
                 best_idx, _ = icosahedron.match_face(-acc_cal_sample, rot_normals)
                 res_rot_fixed, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, -1.0]]), np.array([rot_normals[best_idx]]))
