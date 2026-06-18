@@ -413,8 +413,8 @@ def main():
         
     # 6. 복각 참값 입력 획득 및 20개 포지션 절대 오차 RMSE 계산 (기본 디폴트 -54.3000으로 북반구 음수 부호 고정)
     print("\n" + "=" * 60)
-    dip_input = input("👉 인천 미추홀구 복각 참값 입력 (디폴트: -54.3000): ").strip()
-    dip_true = float(dip_input) if dip_input else -54.3000
+    dip_input = input("👉 인천 미추홀구 복각 참값 입력 (디폴트: 54.3000): ").strip()
+    dip_true = float(dip_input) if dip_input else 54.3000
     print(f"📡 복각 참값 {dip_true:.4f} deg 기준으로 절대 복각 RMSE 재산출 중...\n")
     
     for r in results:
