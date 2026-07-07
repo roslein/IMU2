@@ -14,6 +14,12 @@ import os
 import numpy as np
 from scipy.spatial.transform import Rotation as R_scipy
 
+# 로컬 모듈 탐색 경로 설정
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+IMU_ROOT = os.path.dirname(SCRIPT_DIR)
+sys.path.append(IMU_ROOT)
+from imu_core import align_vectors_svd
+
 PACKET_SIZE = 39
 START_BYTE = 0xAA
 END_BYTE = 0x55
@@ -147,21 +153,13 @@ def main():
         print("⚠️  환경 지자기 지도(env_params.npz) 유실 ➔ [서울 표준 지자기 복각 55도 Fallback 적용]")
         print(f"📡 임시 지자기 레퍼런스 (m_ned_ref): {m_ned_ref}")
         
-    # 가속도/자력 실측 벡터 정규화
-    g_sensor = acc_avg / np.linalg.norm(acc_avg)
-    m_sensor = mag_avg / np.linalg.norm(mag_avg)
+    # 1 단계: 공용 imu_core SVD Wahba Solver를 통한 3D 절대 자세 쿼터니언 복조
+    q_final = align_vectors_svd(acc_avg, mag_avg, m_ned_ref)
     
-    # 1 단계: SVD 기반 Wahba 정합을 통해 센서에서 지구 NED 프레임으로의 최적 회전 복조
-    # (acc_avg는 중력 Down을 의미하므로 ideal Down [0,0,1]에 정합)
-    v_sensor = np.array([g_sensor, m_sensor])
-    v_ned = np.array([np.array([0.0, 0.0, 1.0]), m_ned_ref])
-    
-    res_rot, _ = R_scipy.align_vectors(v_ned, v_sensor)
+    # 2 단계: 복조된 쿼터니언으로부터 회전 행렬 및 오일러각 역산
+    # [qw, qx, qy, qz] -> scipy 포맷 [x, y, z, w]
+    res_rot = R_scipy.from_quat([q_final[1], q_final[2], q_final[3], q_final[0]])
     R_body_to_ned = res_rot.as_matrix()
-    
-    # 2 단계: 쿼터니언 qw, qx, qy, qz 상태 추출
-    q_scipy = res_rot.as_quat() # [x, y, z, w]
-    q_final = np.array([q_scipy[3], q_scipy[0], q_scipy[1], q_scipy[2]]) # [qw, qx, qy, qz]
     
     # 3 단계: 3축 오일러각 (XYZ 오더) 역산
     euler_deg = res_rot.as_euler('xyz', degrees=True)
