@@ -16,10 +16,8 @@ from scipy.spatial.transform import Rotation as R_scipy
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 IMU_ROOT = os.path.dirname(SCRIPT_DIR)
 sys.path.append(IMU_ROOT)
-sys.path.append(os.path.join(IMU_ROOT, 'calibration_tool'))
 sys.path.append(os.path.join(IMU_ROOT, '..', 'imu_simulation'))
-
-import icosahedron
+import imu_core.icosahedron as icosahedron
 from utils.quaternion_math import q_angle_error, accel_mag_to_quaternion, quat_to_euler, q_mult, q_conj
 
 def compute_theoretical_gt_quaternions(normals_jig, R_mount):
@@ -110,7 +108,7 @@ def main():
     rot_normals = icosahedron.get_rotated_normals()
     best_indices = []
     for i in range(20):
-        best_idx, _ = icosahedron.match_face(-acc_cal[i], rot_normals)
+        best_idx, _ = icosahedron.match_face(acc_cal[i], rot_normals)
         best_indices.append(best_idx)
         
     m_ned_list = []

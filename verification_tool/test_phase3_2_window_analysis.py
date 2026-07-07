@@ -16,10 +16,8 @@ from scipy.optimize import least_squares
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 IMU_ROOT = os.path.dirname(SCRIPT_DIR)
 sys.path.append(IMU_ROOT)
-sys.path.append(os.path.join(IMU_ROOT, 'calibration_tool'))
 sys.path.append(os.path.join(IMU_ROOT, '..', 'imu_simulation'))
-
-import icosahedron
+import imu_core.icosahedron as icosahedron
 from utils.quaternion_math import q_angle_error, q_mult, q_conj
 
 # 12-parameter 가속도계 보정 솔버
@@ -29,7 +27,7 @@ def calibrate_acc_12param(d, normals, max_iter=30):
     best_indices = []
     
     for i in range(n_points):
-        best_idx, _ = icosahedron.match_face(-d[i], normals)
+        best_idx, _ = icosahedron.match_face(d[i], normals)
         matched_normals[i] = normals[best_idx]
         best_indices.append(best_idx)
         

@@ -21,9 +21,7 @@ from scipy.optimize import least_squares
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 IMU_ROOT = os.path.dirname(SCRIPT_DIR)
 sys.path.append(IMU_ROOT)
-sys.path.append(os.path.join(IMU_ROOT, 'calibration_tool'))
-
-import icosahedron
+import imu_core.icosahedron as icosahedron
 
 # 시리얼 통신용 상수 정의
 PACKET_SIZE = 39
@@ -46,7 +44,7 @@ def calibrate_acc_12param(d, normals, max_iter=30):
     best_indices = []
     
     for i in range(n_points):
-        best_idx, _ = icosahedron.match_face(-d[i], normals)
+        best_idx, _ = icosahedron.match_face(d[i], normals)
         matched_normals[i] = normals[best_idx]
         best_indices.append(best_idx)
         
@@ -384,8 +382,8 @@ def main():
                 gyro_bias = np.mean(gyro_window, axis=0)
                 print(f"🔥 [자이로 바이어스 실시간 갱신 완료] gyro_bias (rad/s): {gyro_bias}")
                 acc_cal_sample = W_acc @ (mean_acc_raw - b_acc)
-                best_idx, _ = icosahedron.match_face(-acc_cal_sample, rot_normals)
-                res_rot_fixed, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, -1.0]]), np.array([rot_normals[best_idx]]))
+                best_idx, _ = icosahedron.match_face(acc_cal_sample, rot_normals)
+                res_rot_fixed, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, 1.0]]), np.array([rot_normals[best_idx]]))
                 R_tilt_fixed = res_rot_fixed.as_matrix()
                 print(f"🎯 [안착면 최초 매칭 완료] Face #{best_idx:02d} 법선 기준 틸트 보정 행렬 고정 완료.")
                 
@@ -401,8 +399,8 @@ def main():
     
     # 0번째 포지션 가속도 기준으로 안착 면 1회 판정 및 R_tilt_fixed 도출 (downward 기준 [0,0,-1] 정렬)
     acc_cal_0 = W_acc @ (live_raw_acc_samples[0] - b_acc)
-    best_idx, _ = icosahedron.match_face(-acc_cal_0, rot_normals)
-    res_rot_fixed, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, -1.0]]), np.array([rot_normals[best_idx]]))
+    best_idx, _ = icosahedron.match_face(acc_cal_0, rot_normals)
+    res_rot_fixed, _ = R_scipy.align_vectors(np.array([[0.0, 0.0, 1.0]]), np.array([rot_normals[best_idx]]))
     R_tilt_fixed_eval = res_rot_fixed.as_matrix()
     print(f"📡 [최종 평가 정합] 최초 0도 위치의 Face #{best_idx:02d} 안착 법선 기준 고정 틸트 보정 적용.")
     
