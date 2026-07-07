@@ -23,7 +23,7 @@ def calibrate_acc_12param_icosahedron(d, normals, max_iter=50):
     match_indices = []
     
     for i in range(n_points):
-        best_idx, res = icosahedron.match_face(d[i], normals)
+        best_idx, res = icosahedron.match_face(-d[i], normals)
         matched_normals[i] = normals[best_idx]
         match_indices.append(best_idx)
         print(f"   ↳ [NN 매칭] 실측 데이터 #{i+1:02d} ➔ 20면체 법선 #{best_idx:02d} 매칭 완료 (Residual: {res:.6f})")
@@ -39,8 +39,8 @@ def calibrate_acc_12param_icosahedron(d, normals, max_iter=50):
         # 방의 경사각(alpha, beta)이 반영된 3차원 기울기 회전 행렬 생성
         R_tilt = R_scipy.from_euler('yx', [beta, alpha]).as_matrix()
         
-        # 경사각이 투영된 실제 중력 가속도 GT 구면 벡터 갱신
-        g_ref = (R_tilt @ matched_normals.T).T
+        # Upward 수직항력(+1g) 지향을 위해 기준 벡터 방향을 반전
+        g_ref = -(R_tilt @ matched_normals.T).T
         
         # 선형 회귀 대수 행렬 조립 (A = [g_ref, 1])
         A = np.hstack([g_ref, np.ones((n_points, 1))])
@@ -87,6 +87,9 @@ def calibrate_acc_12param_icosahedron(d, normals, max_iter=50):
     return W_est, b_est, alpha, beta
 
 def main():
+    import sys
+    if sys.platform == 'win32':
+        sys.stdout.reconfigure(encoding='utf-8')
     print("=" * 60)
     print(" 🎯 Phase 2 Accelerometer 12-Parameter Calibration Solver")
     print("=" * 60)
