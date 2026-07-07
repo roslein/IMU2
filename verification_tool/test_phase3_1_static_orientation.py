@@ -16,9 +16,17 @@ from scipy.spatial.transform import Rotation as R_scipy
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 IMU_ROOT = os.path.dirname(SCRIPT_DIR)
 sys.path.append(IMU_ROOT)
-sys.path.append(os.path.join(IMU_ROOT, '..', 'imu_simulation'))
-import imu_core.icosahedron as icosahedron
-from utils.quaternion_math import q_angle_error, accel_mag_to_quaternion, quat_to_euler, q_mult, q_conj
+from imu_core import (
+    get_icosahedron_normals,
+    get_jig_to_sensor_rotation,
+    get_rotated_normals,
+    match_face,
+    align_vectors_svd,
+    compute_geodesic_distance,
+    q_mult,
+    q_conj
+)
+
 
 def compute_theoretical_gt_quaternions(normals_jig, R_mount):
     """
@@ -97,18 +105,18 @@ def main():
         sys.exit(1)
     
     # 2. 기하 툴 파라미터 및 R_mount 로드
-    normals_jig = icosahedron.get_icosahedron_normals()
-    R_mount = icosahedron.get_jig_to_sensor_rotation()
+    normals_jig = get_icosahedron_normals()
+    R_mount = get_jig_to_sensor_rotation()
     
     # 3. 20개 포지션별 GT 쿼터니언 및 회전행렬 사전 도출
     q_gt_lut, R_sensor_to_ned_lut = compute_theoretical_gt_quaternions(normals_jig, R_mount)
     print("📊 지그 기하 오차(R_mount) 반영 ideal 3D GT 회전 쿼터니언 산출 완료.")
     
     # 4. 지구 고정 프레임 기준 ideal 지자기 벡터 추출 (Inclination 편향 상쇄 정합)
-    rot_normals = icosahedron.get_rotated_normals()
+    rot_normals = get_rotated_normals()
     best_indices = []
     for i in range(20):
-        best_idx, _ = icosahedron.match_face(acc_cal[i], rot_normals)
+        best_idx, _ = match_face(acc_cal[i], rot_normals)
         best_indices.append(best_idx)
         
     m_ned_list = []
@@ -163,7 +171,7 @@ def main():
         q_est_aligned /= np.linalg.norm(q_est_aligned)
         
         # 쿼터니언 각도 오차 (degree)
-        err_deg = q_angle_error(q_gt_lut[best_idx], q_est_aligned)
+        err_deg = compute_geodesic_distance(q_gt_lut[best_idx], q_est_aligned)
         angle_errors.append(err_deg)
         
         # Modulo 기반 거치 편차 (120도 회전 대칭 및 180도 반전) 보상
