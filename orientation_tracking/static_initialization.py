@@ -139,19 +139,9 @@ def main():
     print(f"   ↳ mag_avg [norm]: {mag_avg}")
 
     # 5. SVD 기반 Wahba 문제 최소제곱 정밀 정합 (특이점/Sign flip 완전 회피)
-    # 3D 자북 레퍼런스 (m_ned_ref) 로드
-    calib_tool_dir = os.path.join(IMU_ROOT, "calibration_tool")
-    env_param_path = os.path.join(calib_tool_dir, "output", "env_params.npz")
-    
-    if os.path.exists(env_param_path):
-        env_params = np.load(env_param_path)
-        m_ned_ref = env_params["m_ned_ref"]
-        print(f"📡 로컬 환경 지자기 지도 로드 완료 (m_ned_ref: {m_ned_ref})")
-    else:
-        # Fallback: 표준 서울 복각(55도) 가정 레퍼런스 [cos(55), 0, sin(55)]
-        m_ned_ref = np.array([0.573576, 0.0, 0.819152])
-        print("⚠️  환경 지자기 지도(env_params.npz) 유실 ➔ [서울 표준 지자기 복각 55도 Fallback 적용]")
-        print(f"📡 임시 지자기 레퍼런스 (m_ned_ref): {m_ned_ref}")
+    # 인천 표준 복각 54.3도 기준 고정 자북 레퍼런스 [cos(54.3 deg), 0, sin(54.3 deg)] 적용
+    m_ned_ref = np.array([0.583503, 0.0, 0.812108])
+    print(f"📡 인천 표준 복각 지자기 레퍼런스 고정 적용 (m_ned_ref: {m_ned_ref})")
         
     # 1 단계: 공용 imu_core SVD Wahba Solver를 통한 3D 절대 자세 쿼터니언 복조
     q_final = align_vectors_svd(acc_avg, mag_avg, m_ned_ref)
