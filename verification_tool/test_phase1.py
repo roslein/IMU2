@@ -29,6 +29,8 @@ def find_arduino_port():
     return None
 
 def main():
+    if sys.platform == 'win32':
+        sys.stdout.reconfigure(encoding='utf-8')
     print("=" * 60)
     print(" 🎯 Real-world IMU Phase 1 Binary Stream Tester")
     print("=" * 60)

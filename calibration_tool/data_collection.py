@@ -193,6 +193,8 @@ def collect_static_samples(ser, sample_count=150):
     return mean_acc, mean_gyro, mean_mag
 
 def main():
+    if sys.platform == 'win32':
+        sys.stdout.reconfigure(encoding='utf-8')
     print("=" * 60)
     print(" 🎯 Real-world IMU Phase 2 20-Position x 12-Yaw Data Collector (v0.3.0)")
     print("=" * 60)
@@ -261,7 +263,7 @@ def main():
         else:
             print("   ➔ 임시 데이터를 무시하고 새로 수집을 개시합니다.")
             
-    import icosahedron
+    from imu_core import icosahedron
     normals = icosahedron.get_rotated_normals()
     
     gui_collected = {}
