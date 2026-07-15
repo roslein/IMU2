@@ -284,7 +284,6 @@ def calibrate_mag_task_aware(mag_raw: np.ndarray, acc_cal: np.ndarray, yaw_gt: n
     if mode == 3:
         p0 = b_mag_0.copy()
     elif mode == 6:
-        # log(diag(W)) 적용하여 양수 제약 강제
         diag_val = np.diag(W_mag_0)
         diag_val = np.where(diag_val <= 0, 1e-5, diag_val)
         p0 = np.concatenate([b_mag_0, np.log(diag_val)])
@@ -301,7 +300,8 @@ def calibrate_mag_task_aware(mag_raw: np.ndarray, acc_cal: np.ndarray, yaw_gt: n
             W = W_mag_0
         elif mode == 6:
             b = p[:3]
-            W = np.diag(np.exp(p[3:6]))
+            # exp 오버플로우 방지용 임계값 clip (-10.0 ~ 10.0 범위 제한)
+            W = np.diag(np.exp(np.clip(p[3:6], -10.0, 10.0)))
         else: # mode == 9
             b = p[:3]
             W = np.array([
@@ -314,9 +314,18 @@ def calibrate_mag_task_aware(mag_raw: np.ndarray, acc_cal: np.ndarray, yaw_gt: n
         errors = []
         for i in range(n_points):
             m_cal = W @ (m_raw[i] - b)
-            # SVD 절대 자세 복조 q = [qw, qx, qy, qz]
+            
+            # NaN/inf 유입 시 강한 양의 패널티 잔차를 부과하여 SVD non-convergence 회피
+            if np.any(np.isnan(m_cal)) or np.any(np.isinf(m_cal)):
+                errors.append(180.0)
+                continue
+                
             q_est = align_vectors_svd(a_cal[i], m_cal, ref_vec)
-            # scipy quaternion [qx, qy, qz, qw] 정렬
+            
+            if np.any(np.isnan(q_est)) or np.any(np.isinf(q_est)):
+                errors.append(180.0)
+                continue
+                
             res_rot = R_scipy.from_quat([q_est[1], q_est[2], q_est[3], q_est[0]])
             yaw_est = res_rot.as_euler('xyz', degrees=True)[2]
             
@@ -336,7 +345,7 @@ def calibrate_mag_task_aware(mag_raw: np.ndarray, acc_cal: np.ndarray, yaw_gt: n
         W_final = W_mag_0
     elif mode == 6:
         b_final = p_opt[:3]
-        W_final = np.diag(np.exp(p_opt[3:6]))
+        W_final = np.diag(np.exp(np.clip(p_opt[3:6], -10.0, 10.0)))
     else: # mode == 9
         b_final = p_opt[:3]
         W_final = np.array([
