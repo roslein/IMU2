@@ -10,6 +10,12 @@ import struct
 import time
 import sys
 import os
+
+# 로컬 모듈 탐색 경로 설정
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+IMU_ROOT = os.path.dirname(SCRIPT_DIR)
+sys.path.append(IMU_ROOT)
+
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
