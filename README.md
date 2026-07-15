@@ -1,4 +1,4 @@
-# 🎯 Real-world IMU & Orientation Tracking Project (v0.3.0)
+# 🎯 Real-world IMU & Orientation Tracking Project
 
 본 프로젝트는 정20면체 지그 및 수평 회전판을 활용하여 실물 고성능 MEMS 관성/자기 센서(**`ISM330DHCX`** & **`MMC5983MA`**)의 정밀 캘리브레이션 및 쿼터니언 기반 정적 무회전 3D 자세 추정(Orientation Tracking)을 수행하는 통합 개발 시스템입니다.
 
@@ -7,13 +7,13 @@
 ## 🏛️ 1. 핵심 아키텍처 및 설계 특징
 
 *   **2-Stage 하이브리드 지자기 보정 (Task-Aware 최적화)**:
-    *   **Stage 1 (기하 초기화)**: 자력계 3-param(Offset), 6-param(Scale), 9-param(Soft-iron Ellipsoid) 피팅을 가동하여 초기 왜곡 모델 복원.
-    *   **Stage 2 (Task-Aware 최적화)**: 수평 회전판의 실제 회전 각도(Yaw GT)와 비교하여, Heading(Yaw) 추정 오차 자체를 직접 최소화하는 Scipy `least_squares` 비선형 최소제곱 최적화 수행.
+    *   **Stage 1 (기하 초기화)**: 자력계 3-param(Offset), 6-param(Scale), 9-param(Soft-iron Ellipsoid) 피팅을 가동하여 초기 왜곡 모델을 복원합니다.
+    *   **Stage 2 (Task-Aware 최적화)**: 수평 회전판의 실제 회전 각도(Yaw GT)와 비교하여, Heading(Yaw) 추정 오차 자체를 직접 최소화하는 비선형 최소제곱 최적화(Scipy `least_squares`)를 수행합니다.
 *   **원클릭 통합 보정 및 펌웨어 실시간 이식**:
-    *   [integrated_calibration.py](file:///d:/바탕화면/CS-Study-Tracker/IMU/calibration_tool/integrated_calibration.py) 단 한 번의 실행으로 가속도계 12-parameter LS 피팅, 자이로 Global 오프셋 바이어스, 자력계 Task-Aware 최적화 및 5대 지표 대조 모델 자동 낙찰을 순차적으로 수행합니다.
-    *   도출된 최종 교정 파라미터는 펌웨어 컴파일 디렉토리의 [calib_params.h](file:///d:/바탕화면/CS-Study-Tracker/IMU/firmware/calibrated/calibration/calib_params.h) 헤더 파일로 실시간 즉시 이식되어 빌드 툴체인을 결합합니다.
+    *   [integrated_calibration.py](file:///d:/바탕화면/CS-Study-Tracker/IMU/calibration_tool/integrated_calibration.py) 실행을 통해 가속도계 12-parameter LS 피팅, 자이로 Global 오프셋 바이어스, 자력계 Task-Aware 최적화 및 5대 지표 대조 모델 자동 낙찰을 순차적으로 수행합니다.
+    *   도출된 최종 교정 파라미터는 펌웨어 컴파일 디렉토리의 [calib_params.h](file:///d:/바탕화면/CS-Study-Tracker/IMU/firmware/calibrated/calibration/calib_params.h) 헤더 파일로 실시간 즉시 이식되어 펌웨어 빌드 툴체인과 자동 정합됩니다.
 *   **환경 지자기 매핑 폐기 및 인천 복각 표준 절대 고정**:
-    *   Yaw 정합도를 저해하던 3D 환경 자북 지도 생성 단계를 완전 소거하고, 대한민국 인천의 표준 지자기 복각 상수 벡터($m_{ned\_ref} = [0.583503, 0.0, 0.812108]$)를 절대 자세 추정기([static_initialization.py](file:///d:/바탕화면/CS-Study-Tracker/IMU/orientation_tracking/static_initialization.py))의 절대 레퍼런스로 고정 인가합니다.
+    *   공간 왜곡에 따른 3D 자북 지도 생성 단계를 소거하고, 대한민국 인천의 표준 지자기 복각 상수 벡터($m_{ned\_ref} = [0.583503, 0.0, 0.812108]$)를 절대 자세 추정기([static_initialization.py](file:///d:/바탕화면/CS-Study-Tracker/IMU/orientation_tracking/static_initialization.py))의 절대 레퍼런스로 고정 인가합니다.
 *   **고속 Binary 패킷 프로토콜**:
     *   ASCII 전송 및 문자열 파싱 부하 차단 ➔ 39-Byte raw binary 패킷 구조를 확립했습니다.
     *   `[START (0xAA)] + [Payload (Float 9축 데이터 36 Bytes)] + [XOR Checksum] + [END (0x55)]`
@@ -59,22 +59,22 @@
 
 ## 🛠️ 3. 시작하기 (Quick Start)
 
-### 1) 1단계: 원시 데이터 수집 및 인터페이스 검증 (Phase 1)
+### 1) 1단계: 원시 데이터 수집 및 인터페이스 검증
 1. **펌웨어 업로드**: 공용 라이브러리 `IMU_Core`를 아두이노 IDE에 마운트한 후, `firmware/raw/raw.ino`를 업로드하여 미보정 LSB 데이터를 송출합니다.
 2. **실측 데이터 수집**: `python calibration_tool/data_collection.py` 를 실행합니다.
-   * 지그의 안내에 따라 20개 면을 수평 회전판에 밀착 안착시키고, 면당 12개 눈금(30도 간격)을 회전시키며 [Enter] 키로 1.5초(150샘플) 평균 데이터를 획득합니다 (총 240포인트 수집).
-   * 중간에 연결이 끊겨도 다시 실행 시 자동으로 기존 지점부터 **이어받기(Resume)**가 가동됩니다.
+   * 지그의 안내에 따라 20개 면을 수평 회전판에 밀착 안착시키고, 면당 12개 눈금(30도 간격)을 회전시키며 [Enter] 키를 입력해 1.5초(150샘플) 평균 데이터를 획득합니다 (총 240포인트 수집).
+   * 수집 중 연결 단절 시 재실행하면 기존 수집 위치부터 **이어받기(Resume)**가 수행됩니다.
 3. **통신 무결성 검증**:
    * `python verification_tool/test_phase1.py` 를 통해 바이너리 수신 스레드 정합률과 체크섬 성공 여부를 확인합니다.
 
-### 2) 2단계: 원클릭 통합 보정 및 펌웨어 헤더 실시간 이식 (Phase 2)
+### 2) 2단계: 원클릭 통합 보정 및 펌웨어 헤더 실시간 이식
 1. **통합 보정 기동**:
    * `python calibration_tool/integrated_calibration.py` 를 가동합니다.
-   * `collected_data_9axis.npz` 파일이 로드되어 가속도 12-parameter, 자이로 바이어스, 자력 3p/6p/9p 기하 초기화 및 Stage 2 Task-Aware 최적화가 연쇄 실행됩니다.
+   * 수집된 `collected_data_9axis.npz` 파일이 로드되어 가속도 12-parameter, 자이로 바이어스, 자력계(기하+Task-Aware) 보정 솔버가 연쇄 실행됩니다.
    * 5대 평가지표 RMSE가 최소인 모델이 자동 낙찰되고, `calib_params.npz` 통합 파라미터 파일이 백업됩니다.
-   * 보정 계수가 컴파일 완료된 `calib_params.h` 파일이 펌웨어 경로([calib_params.h](file:///d:/바탕화면/CS-Study-Tracker/IMU/firmware/calibrated/calibration/calib_params.h))로 **즉시 실시간 덮어쓰기 이식**됩니다.
+   * 최종 보정 계수가 컴파일 완료된 `calib_params.h` 파일이 펌웨어 경로([calib_params.h](file:///d:/바탕화면/CS-Study-Tracker/IMU/firmware/calibrated/calibration/calib_params.h))로 **즉시 실시간 자동 이식**됩니다.
 
-### 3) 3단계: 보정 펌웨어 탑재 및 절대 자세 추정 정합 (Phase 3)
+### 3) 3단계: 보정 펌웨어 탑재 및 절대 자세 추정 정합
 1. **보정 펌웨어 업로드**: `firmware/calibrated/calibrated.ino` 를 MCU에 컴파일 업로드합니다. 보정이 전역 인가된 9축 Float 데이터가 실시간 100Hz 속도로 스트리밍됩니다.
 2. **절대 자세 복조**:
    * `python orientation_tracking/static_initialization.py` 를 기동합니다.
