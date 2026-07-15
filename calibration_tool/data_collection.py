@@ -1,7 +1,8 @@
 """
 Real-world IMU Phase 2 Data Collection (data_collection.py)
-목적: 정20면체의 20개 면에 센서를 차례로 거치하고, 수평 회전판 12눈금(30도 간격)
-      결합을 통해 총 240개 포인트(20면 x 12눈금)의 9축 원시 데이터를 수집합니다.
+목적: 사용자가 임의의 면을 거치하면 실시간으로 감지하고 중복을 확인하여 수집하며,
+      수집 순서에 관계없이 0~19번 면 순서로 정렬된 (20, 12, 3) 3D 배열 데이터를 적립한 뒤
+      최종 (240, 3) 형태로 플래팅하여 호환성을 유지 저장합니다.
 """
 
 import serial
@@ -10,15 +11,16 @@ import struct
 import time
 import sys
 import os
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 # 로컬 모듈 탐색 경로 설정
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 IMU_ROOT = os.path.dirname(SCRIPT_DIR)
 sys.path.append(IMU_ROOT)
 
-import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+from imu_core import icosahedron
 
 PACKET_SIZE = 39
 START_BYTE = 0xAA
@@ -43,7 +45,7 @@ def init_3d_plot(normals):
     ax = fig.add_subplot(111, projection='3d')
     plt.show()
 
-def update_3d_plot(collected_data, normals, new_point=None, new_matched_idx=None):
+def update_3d_plot(completed_faces, normals, new_point=None, new_matched_idx=None):
     global fig, ax
     if fig is None or ax is None:
         return
@@ -58,12 +60,12 @@ def update_3d_plot(collected_data, normals, new_point=None, new_matched_idx=None
     ax.plot_wireframe(x, y, z, color='lightgray', alpha=0.3, linewidth=0.5)
     
     for idx, n in enumerate(normals):
-        if idx in collected_data:
-            ax.scatter(n[0], n[1], n[2], color='green', s=100, marker='o', label='Collected' if idx == 0 else "")
+        if idx in completed_faces:
+            ax.scatter(n[0], n[1], n[2], color='green', s=100, marker='o')
             ax.text(n[0] * 1.15, n[1] * 1.15, n[2] * 1.15, f"#{idx:02d} (G)", color='darkgreen', fontsize=9, weight='bold')
             ax.plot([0, n[0]], [0, n[1]], [0, n[2]], color='green', alpha=0.5, linewidth=1.5)
         else:
-            ax.scatter(n[0], n[1], n[2], color='red', s=60, marker='x', label='Uncollected' if idx == 0 else "")
+            ax.scatter(n[0], n[1], n[2], color='red', s=60, marker='x')
             ax.text(n[0] * 1.15, n[1] * 1.15, n[2] * 1.15, f"#{idx:02d}", color='darkred', fontsize=9)
             ax.plot([0, n[0]], [0, n[1]], [0, n[2]], color='red', alpha=0.3, linestyle='--', linewidth=1.0)
             
@@ -71,22 +73,18 @@ def update_3d_plot(collected_data, normals, new_point=None, new_matched_idx=None
         norm_val = np.linalg.norm(new_point)
         if norm_val > 1e-3:
             new_unit = - (new_point / norm_val)
-            ax.scatter(new_unit[0], new_unit[1], new_unit[2], color='gold', s=180, marker='*', edgecolors='black', linewidths=1.0, label='New Position')
+            ax.scatter(new_unit[0], new_unit[1], new_unit[2], color='gold', s=180, marker='*', edgecolors='black', linewidths=1.0)
             ax.plot([0, new_unit[0]], [0, new_unit[1]], [0, new_unit[2]], color='gold', linewidth=3.0)
             
             if new_matched_idx is not None:
                 n_target = normals[new_matched_idx]
                 ax.plot([new_unit[0], n_target[0]], [new_unit[1], n_target[1]], [new_unit[2], n_target[2]], color='orange', linestyle=':', linewidth=2.0)
                 
-    ax.set_title("📌 IMU 20-Position Calibration Guide View (3D)")
+    ax.set_title("[GUIDE] IMU 20-Position Calibration Guide View (3D)")
     ax.set_xlabel("X-Axis")
     ax.set_ylabel("Y-Axis")
     ax.set_zlabel("Z-Axis")
     ax.grid(True)
-    
-    handles, labels = ax.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    ax.legend(by_label.values(), by_label.keys(), loc='upper left')
     
     plt.draw()
     plt.pause(0.01)
@@ -201,8 +199,9 @@ def collect_static_samples(ser, sample_count=150):
 def main():
     if sys.platform == 'win32':
         sys.stdout.reconfigure(encoding='utf-8')
+        
     print("=" * 60)
-    print(" 🎯 Real-world IMU Phase 2 20-Position x 12-Yaw Data Collector (v0.3.0)")
+    print(" 🎯 Real-world IMU Phase 2 Autonomous 9-Axis Data Collector")
     print("=" * 60)
     
     port = find_arduino_port()
@@ -219,13 +218,13 @@ def main():
         print(f"❌ 포트 연결 실패: {e}")
         sys.exit(1)
         
-    collected_acc = []
-    collected_mag = []
-    collected_gyro = []
-    collected_yaw_gt = []
+    # (20, 12, 3) 3D 구조 데이터셋 초기화
+    collected_acc = np.zeros((20, 12, 3))
+    collected_mag = np.zeros((20, 12, 3))
+    collected_gyro = np.zeros((20, 12, 3))
+    collected_yaw_gt = np.zeros((20, 12))
     
-    start_face = 0
-    start_yaw = 0
+    completed_faces = set()
     
     script_dir = os.path.dirname(os.path.abspath(__file__))
     output_dir = os.path.join(script_dir, "output")
@@ -233,6 +232,8 @@ def main():
         os.makedirs(output_dir)
         
     final_save_path = os.path.join(output_dir, "collected_data_9axis.npz")
+    
+    # 백업 처리
     if os.path.exists(final_save_path):
         try:
             mtime = os.path.getmtime(final_save_path)
@@ -241,108 +242,107 @@ def main():
             backup_name = f"collected_data_9axis_backup_{timestamp_str}.npz"
             backup_path = os.path.join(output_dir, backup_name)
             os.rename(final_save_path, backup_path)
-            print(f"\n📁 [자동 백업 완료] 기존 완성본을 감지하여 안전하게 백업했습니다.")
-            print(f"   ➔ 백업 파일: output/{backup_name}")
+            print(f"\n📁 [자동 백업] 기존 완성본 감지 ➔ 백업 완료: output/{backup_name}")
         except Exception as e:
-            print(f"\n⚠️ [백업 실패] 기존 데이터 백업 중 오류 발생: {e}")
+            print(f"\n⚠️ 기존 데이터 백업 실패: {e}")
             
     checkpoint_path = os.path.join(output_dir, "checkpoint_data_9axis.npz")
     if os.path.exists(checkpoint_path):
-        print("\n⚠️ [임시 복원 데이터 감지] 수집 중이던 9축 데이터가 존재합니다.")
+        print("\n⚠️ [임시 복원 데이터 감지] 수집 중이던 9축 체크포인트가 존재합니다.")
         ans = input("   👉 기존 데이터를 이어서 수집하시겠습니까? (Y/N): ").strip().lower()
         if ans in ['', 'y', 'yes']:
             try:
                 with np.load(checkpoint_path) as data:
-                    collected_acc = list(data['acc'])
-                    collected_mag = list(data['mag'])
-                    collected_gyro = list(data['gyro'])
-                    collected_yaw_gt = list(data['yaw_gt'])
-                    start_face = int(data['start_face'])
-                    start_yaw = int(data['start_yaw'])
-                print(f"   ✅ [복원 성공] {len(collected_acc)}개 포인트 데이터를 이어서 수집합니다! (면 #{start_face:02d}, 눈금 {start_yaw * 30.0:.1f}°부터 시작)")
+                    collected_acc = data['acc']
+                    collected_mag = data['mag']
+                    collected_gyro = data['gyro']
+                    collected_yaw_gt = data['yaw_gt']
+                    completed_faces = set(data['completed_faces'])
+                print(f"   ✅ [복원 성공] 총 {len(completed_faces)}개 면 수집 완료 상태 복원됨.")
             except Exception as e:
-                print(f"   ⚠️ [복원 실패] 임시 데이터 로드 오류: {e}. 새로 수집을 개시합니다.")
-                collected_acc = []
-                collected_mag = []
-                collected_gyro = []
-                collected_yaw_gt = []
+                print(f"   ⚠️ 복원 실패: {e}. 새로 수집을 시작합니다.")
+                completed_faces = set()
         else:
-            print("   ➔ 임시 데이터를 무시하고 새로 수집을 개시합니다.")
+            print("   ➔ 새로 수집을 개시합니다.")
             
-    from imu_core import icosahedron
     normals = icosahedron.get_rotated_normals()
     
-    gui_collected = {}
-    for idx in range(len(collected_acc)):
-        f_idx = idx // 12
-        gui_collected[f_idx] = (collected_acc[idx], collected_mag[idx])
-        
     init_3d_plot(normals)
-    update_3d_plot(gui_collected, normals)
+    update_3d_plot(completed_faces, normals)
     
-    print("\n💡 정20면체 20개 각 면의 안착과 회전판 12개 눈금(30도 간격) 결합 수집을 개시합니다.")
-    print("💡 총 240개 포인트(20면 x 12눈금)가 수집될 예정입니다.\n")
+    print("\n💡 사용자가 임의로 거치한 면을 자동 식별하여 수집합니다.")
+    print("💡 총 20개 면에 대해 각각 12개 눈금(총 240포인트)을 완료해야 합니다.\n")
     
     try:
         import msvcrt
-        for face_idx in range(start_face, 20):
+        while len(completed_faces) < 20:
             print(f"\n" + "=" * 70)
-            print(f" 📂 [면 안착 가이드] 정20면체 지그의 #{face_idx:02d}번 면을 수평 바닥에 안착시키십시오.")
+            print(f" 📂 [자율 안착 가이드] 미완료된 정20면체 면 중 하나를 바닥에 안착시키십시오.")
+            print(f" (완료 현황: {len(completed_faces)} / 20 면 완료)")
             print(f"=============================================================")
             
             ser.reset_input_buffer()
-            print("📡 실시간 법선 매칭 검증 중... 지그 안착 완료 후 [Enter] 또는 [Space] 키를 누르십시오.")
+            detected_face_idx = None
             last_plot_time = 0
+            
+            # 실시간 동적 면 감지 대기 루프
             while True:
                 acc_raw, mag_raw = get_latest_sample(ser)
                 if acc_raw is not None:
                     best_idx, res = icosahedron.match_face(acc_raw, normals)
                     match_percent = (1.0 - res) * 100.0
                     
-                    if best_idx == face_idx:
-                        status_str = f"올바른 면 감지 성공!! ✅ (Face #{best_idx:02d})"
+                    if best_idx in completed_faces:
+                        status_str = f"이미 완료된 면입니다 ❌ (면 #{best_idx:02d}) 다른 면을 거치해 주십시오."
+                        is_ready = False
                     else:
-                        status_str = f"잘못된 면 거치 ❌ (타겟: #{face_idx:02d} ➔ 실측 감지: #{best_idx:02d})"
+                        status_str = f"미완료 면 감지! ✅ (면 #{best_idx:02d}) | 일치율: {match_percent:.1f}%"
+                        is_ready = True
+                        detected_face_idx = best_idx
                         
-                    sys.stdout.write(f"\r📡 실시간 프리뷰 ➔ {status_str} | 일치율: {match_percent:.1f}%")
+                    sys.stdout.write(f"\r📡 실시간 프리뷰 ➔ {status_str}")
                     sys.stdout.flush()
                     
                     if time.time() - last_plot_time > 0.15:
-                        update_3d_plot(gui_collected, normals, new_point=acc_raw, new_matched_idx=best_idx)
+                        update_3d_plot(completed_faces, normals, new_point=acc_raw, new_matched_idx=best_idx)
                         last_plot_time = time.time()
                 
                 plt.pause(0.01)
+                
+                # 키 입력 대기 및 감지 완료 분기
                 if msvcrt.kbhit():
                     key = msvcrt.getch()
                     if key in [b'\r', b' ', b'\n']:
-                        print("\n👉 면 안착 확인 완료! 회전판 12개 눈금 시퀀스를 개시합니다.")
-                        break
+                        if is_ready and detected_face_idx is not None:
+                            print(f"\n👉 면 #{detected_face_idx:02d} 선택 완료! 12눈금(Yaw) 수집 시퀀스 진입.")
+                            break
+                        else:
+                            print("\n⚠️ 수집할 수 없는 면(이미 완료됨)이거나 감지되지 않았습니다.")
                 time.sleep(0.01)
                 
-            yaw_start_loop = start_yaw if face_idx == start_face else 0
-            for yaw_idx in range(yaw_start_loop, 12):
+            # 해당 면에 대해 12눈금 순차 수집 진행
+            for yaw_idx in range(12):
                 yaw_target_deg = yaw_idx * 30.0
-                print(f"\n👉 [현재 수집 타겟] 면 #{face_idx:02d} | 회전판 눈금: {yaw_target_deg:.1f}°")
-                print("📡 회전판 눈금을 정밀 조작하여 정지한 후 [Space] 또는 [Enter] 키를 누르십시오...")
+                print(f"\n👉 [눈금 수집] 면 #{detected_face_idx:02d} | 회전판 눈금: {yaw_target_deg:.1f}°")
+                print("📡 회전판 눈금을 정밀 조정하여 정지한 후 [Space] 또는 [Enter] 키를 누르십시오...")
                 
                 ser.reset_input_buffer()
                 last_plot_time = 0
                 while True:
                     acc_raw, mag_raw = get_latest_sample(ser)
                     if acc_raw is not None:
-                        best_idx, res = icosahedron.match_face(acc_raw, normals)
-                        sys.stdout.write(f"\r📡 실시간 모니터링 ➔ 면 #{best_idx:02d} 거치 중... (안정 정지 대기)")
+                        sys.stdout.write(f"\r📡 실시간 모니터링 ➔ 면 #{detected_face_idx:02d} 거치 상태 유지 중... (안정 정지 대기)")
                         sys.stdout.flush()
                         
                         if time.time() - last_plot_time > 0.15:
-                            update_3d_plot(gui_collected, normals, new_point=acc_raw, new_matched_idx=best_idx)
+                            update_3d_plot(completed_faces, normals, new_point=acc_raw, new_matched_idx=detected_face_idx)
                             last_plot_time = time.time()
                             
                     plt.pause(0.01)
                     if msvcrt.kbhit():
                         key = msvcrt.getch()
                         if key in [b'\r', b' ', b'\n']:
-                            print(f"\n🚀 [수집 기동] 면 #{face_idx:02d} | 눈금 {yaw_target_deg:.1f}° 1.5초 수집 시작!")
+                            print(f"\n🚀 [수집 기동] 면 #{detected_face_idx:02d} | 눈금 {yaw_target_deg:.1f}° 1.5초 수집 시작!")
                             break
                     time.sleep(0.01)
                     
@@ -350,42 +350,54 @@ def main():
                 
                 mean_acc, mean_gyro, mean_mag = collect_static_samples(ser, sample_count=150)
                 
-                gui_collected[face_idx] = (mean_acc, mean_mag)
-                update_3d_plot(gui_collected, normals)
-                
-                collected_acc.append(mean_acc)
-                collected_mag.append(mean_mag)
-                collected_gyro.append(mean_gyro)
-                collected_yaw_gt.append(yaw_target_deg)
+                # 3D 슬롯 구조에 정위치 대입
+                collected_acc[detected_face_idx, yaw_idx] = mean_acc
+                collected_mag[detected_face_idx, yaw_idx] = mean_mag
+                collected_gyro[detected_face_idx, yaw_idx] = mean_gyro
+                collected_yaw_gt[detected_face_idx, yaw_idx] = yaw_target_deg
                 
                 print(f"   ↳ ⚖️ [평균 획득] Acc: [{mean_acc[0]:.1f}, {mean_acc[1]:.1f}, {mean_acc[2]:.1f}] | Mag: [{mean_mag[0]:.1f}, {mean_mag[1]:.1f}, {mean_mag[2]:.1f}]")
-                print(f"   ↳ [진행 상태] {len(collected_acc)} / 240 포인트 완료")
                 
+                # 매 눈금마다 오토세이브 임시 저장
                 try:
-                    next_face = face_idx
-                    next_yaw = yaw_idx + 1
-                    if next_yaw == 12:
-                        next_face += 1
-                        next_yaw = 0
-                        
                     np.savez(checkpoint_path,
-                             acc=np.array(collected_acc),
-                             mag=np.array(collected_mag),
-                             gyro=np.array(collected_gyro),
-                             yaw_gt=np.array(collected_yaw_gt),
-                             start_face=next_face,
-                             start_yaw=next_yaw)
+                             acc=collected_acc,
+                             mag=collected_mag,
+                             gyro=collected_gyro,
+                             yaw_gt=collected_yaw_gt,
+                             completed_faces=list(completed_faces))
                 except Exception as e:
-                    print(f"   ⚠️ [체크포인트 백업 에러]: {e}")
+                    print(f"   ⚠️ 체크포인트 백업 에러: {e}")
                     
-        np.savez(final_save_path, 
-                 acc=np.array(collected_acc), 
-                 mag=np.array(collected_mag), 
-                 gyro=np.array(collected_gyro), 
-                 yaw_gt=np.array(collected_yaw_gt))
+            # 12눈금 수집 완료 후 완료 셋에 추가 및 리렌더링
+            completed_faces.add(detected_face_idx)
+            update_3d_plot(completed_faces, normals)
+            
+            # 최종 면 단위 갱신 세이브
+            try:
+                np.savez(checkpoint_path,
+                         acc=collected_acc,
+                         mag=collected_mag,
+                         gyro=collected_gyro,
+                         yaw_gt=collected_yaw_gt,
+                         completed_faces=list(completed_faces))
+            except Exception as e:
+                pass
+                
+        # 20개 면 완료 시 최종 flattening 240포인트 구조로 변환하여 보존
+        acc_flat = collected_acc.reshape(240, 3)
+        mag_flat = collected_mag.reshape(240, 3)
+        gyro_flat = collected_gyro.reshape(240, 3)
+        yaw_gt_flat = collected_yaw_gt.reshape(240)
         
-        print("\n🎉 [대성공] 20면 x 12눈금 = 240개 9축 통합 데이터셋 수집이 완전히 완료되었습니다!")
-        print(f"📁 저장 경로: {final_save_path}\n")
+        np.savez(final_save_path, 
+                 acc=acc_flat, 
+                 mag=mag_flat, 
+                 gyro=gyro_flat, 
+                 yaw_gt=yaw_gt_flat)
+        
+        print("\n🎉 [대성공] 20면 x 12눈금 = 240개 9축 통합 데이터셋 정렬 수집 완료!")
+        print(f"📁 최종 저장 경로: {final_save_path}\n")
         
         if os.path.exists(checkpoint_path):
             try:

@@ -79,3 +79,7 @@
 *   **ID**: MISTAKE-IMU-04
 *   **유형**: [MISTAKE]
 *   **내용**: 하위 폴더의 파이썬 스크립트 실행 시 부모 경로(IMU/)가 sys.path에 수동 등록되어 있지 않으면, imu_core와 같은 로컬 패키지를 찾지 못하고 ModuleNotFoundError 크래시 발생함. 상호 패키지 참조를 하는 모든 신규 툴 상단에는 반드시 SCRIPT_DIR와 IMU_ROOT 경로 탐색 가드를 선행 셋업해야 함.
+
+*   **ID**: CONCEPT-IMU-07
+*   **유형**: [깨달음]
+*   **내용**: 임의 순서 자율 안착 수집 시 최종 240포인트 calibration 툴체인과의 정렬 꼬임을 방지하려면, (20, 12, 3) 3D 배열 슬롯 구조로 데이터를 적립하고 수집 완료 시 reshape(-1, 3)로 플래팅하여 최종 output/collected_data_9axis.npz에 저장하는 3D 슬롯화 아키텍처 패턴이 정답임.
