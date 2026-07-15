@@ -294,7 +294,7 @@ def main():
             while True:
                 acc_raw, mag_raw = get_latest_sample(ser)
                 if acc_raw is not None:
-                    best_idx, res = icosahedron.match_face(acc_raw, normals)
+                    best_idx, res = icosahedron.match_face(-acc_raw, normals)
                     match_percent = (1.0 - res) * 100.0
                     
                     if best_idx in completed_faces:
