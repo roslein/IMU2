@@ -2,6 +2,16 @@
 
 본 프로젝트는 정20면체 지그 및 수평 회전판을 활용하여 실물 고성능 MEMS 관성/자기 센서(ISM330DHCX & MMC5983MA)의 정밀 캘리브레이션 및 쿼터니언 기반 정적 무회전 3D 자세 추정(Orientation Tracking)을 수행하는 통합 개발 시스템입니다.
 
+> [!IMPORTANT]
+> **필수 의존성**
+> 본 프로젝트는 다음 라이브러리를 기반으로 구현되었습니다. 실행 전 모두 설치되어 있어야 합니다.
+>
+> - Python 3.10 이상
+> - NumPy
+> - SciPy (`optimize`, `spatial.transform`)
+> - OpenCV
+> - Matplotlib
+
 ## 1. 상황
 
 - 정20면체 지그 x 수평 회전판 결합(240포인트) 데이터를 수집하여 ISM330DHCX/MMC5983MA 센서의 오프셋/스케일을 일괄 보정해야 한다.
@@ -51,7 +61,7 @@
 4. `firmware/calibrated/calibrated.ino` 보정 펌웨어를 MCU 보드에 업로드한다.
 5. `orientation_tracking/static_initialization.py` 를 실행하여 인천 표준 복각 레퍼런스 정합 기반 절대 자세 Roll, Pitch, Yaw를 계산 및 저장한다.
 
-## 4. 구현 중 체크
+## 4. 실행 중 체크
 
 - [x] `data_collection.py` 내의 `collected_data_9axis.npz`에 가속도, 자력, 자이로, `yaw_gt` 리스트가 누락 없이 패킹되었는지 확인한다.
 - [x] 자력계 Stage 2 최적화 솔버 `calibrate_mag_task_aware` 의 입력 초기값으로 Stage 1 Ellipsoid 피팅 결과가 정상 전달되는지 확인한다.
@@ -61,17 +71,19 @@
 - [x] **[Phase 2 검증]** 보정 러너 가동 후 `verification_tool/test_phase2.py`를 실행하여 가속도 RMSE가 1.0g 구면에 수렴하고 자력계 틸트 보정 방향이 Upward 규격을 준수하는지 검증하였는가?
 - [x] **[Phase 3 검증]** 보정 펌웨어 탑재 및 자세 추정 후 `verification_tool/test_phase3.py`를 실행하여 20개 포지션 방위각 바이어스 및 Modulo 보상 Quiver 3D 화살표 정합 상태를 시각적으로 확인하였는가?
 
-## 5. 주의 및 경고 사항 (System Inversion)
+## 5. 주의 및 경고 사항 (Known Limitations & Caution)
 
 > [!CAUTION]
-> **오작동 위험 행동 (Absolute Don'ts)**
-> - **파편화 데이터 수집 금지**: 9축 원시 데이터를 하나의 파일(`collected_data_9axis.npz`)로 동시 결합 수집하지 않고, 가속도/자력/자이로 데이터를 각각 서로 다른 시점에 개별 수집하여 정합하면 자세 계산 시 기하 결합성이 무너집니다.
-> - **보정 로직 하드코딩 방치 금지**: `imu_core` 내에 모듈화된 솔버 연산 구조를 무시하고, 개별 스크립트에 피팅 수식을 복사 붙여넣기로 하드코딩 방치 시 버전 파편화 오차가 유발됩니다.
+> **사용 시 주의 사항**
+> - **9축 데이터는 반드시 동일한 측정 세션에서 동시에 수집하십시오.** 가속도계, 자이로스코프, 자력계를 서로 다른 시점에 수집한 데이터를 혼합하면 보정 및 자세 추정 결과가 올바르지 않을 수 있습니다.
+> - **자력계 보정은 자기 간섭이 적은 환경에서 수행하십시오.** 자석, 철제 구조물, 모터, 전원장치 및 대형 금속 물체는 측정값을 왜곡하여 보정 성능을 저하시킬 수 있습니다.
+> - **보정 후에는 반드시 성능을 검증하십시오.** 하나의 보정 모델만 신뢰하지 말고, Heading RMSE, Closed-loop Error, Quaternion Error 등의 실제 자세 오차를 함께 확인하는 것을 권장합니다.
 
 > [!WARNING]
-> **성능 저하 행위 (Recurring Anti-patterns)**
-> - **수동 헤더 복사 금지**: 통합 보정 후 펌웨어 경로 내 `calib_params.h`를 자동 이식하지 않고 수동 복사 이송 시, 휴먼 에러로 인한 오이송 누락 에러가 반복 발생할 수 있습니다.
-> - **고차원 모델 무조건적 맹신 금지**: 6-parameter 및 9-parameter 피팅 시 복각(Dip Angle) RMSE가 지나치게 왜곡되거나 수축(Collapse)할 경우, 3-parameter(Offset Only) 물리적 강건 대조군과의 수치적 비교 없이 적용하지 마십시오.
+> **알려진 제한 사항**
+> - **본 프로젝트는 정적(Quasi-static) 자세 추정을 대상으로 설계되었습니다.** 급격한 움직임이나 지속적인 동적 환경에서의 자세 추정은 지원 대상이 아닙니다.
+> - **자이로스코프는 정적 바이어스만 보정합니다.** Scale Factor, 축 비직교성(Non-orthogonality), 온도 보정은 현재 포함되어 있지 않습니다.
+> - **고차원 자력계 보정은 충분한 자세 다양성이 확보된 데이터셋을 필요로 합니다.** 데이터 분포가 부족하면 6-Parameter 및 9-Parameter 보정은 불안정하거나 오히려 Heading 성능을 저하시킬 수 있습니다.
 
 ## 6. 기대 효과 및 결론 (Expected Results & Conclusion)
 
@@ -88,11 +100,52 @@
 
 ## 7. 참고 자료 (References)
 
-- **MATLAB 공식 융합/보정 강의 및 예제 (Web Links)**:
-  - [MATLAB Understanding Sensor Fusion and Tracking Lecture Series](https://youtube.com/playlist?list=PLn8PRpmsu08rneZErjW_NIBs0Rl_vcgSw&si=8yu4xianW--leL4q) (MathWorks 공식 센서 융합 및 추적 유튜브 재생목록 강의)
-  - [MATLAB Understanding Kalman Filters Video Series](https://kr.mathworks.com/videos/series/understanding-kalman-filters.html?s_eid=PSM_22735) (MathWorks 공식 칼만 필터의 이해 비디오 시리즈)
-  - [MATLAB Magnetometer Calibration Guide](https://kr.mathworks.com/help/fusion/ug/magnetometer-calibration.html) (MathWorks 공식 자력계 하드/소프트 아이언 보정 가이드 및 수식 설명)
-  - [MATLAB Estimating Orientation Using Inertial Sensor Fusion](https://kr.mathworks.com/help/fusion/ug/Estimating-Orientation-Using-Inertial-Sensor-Fusion-and-MPU-9250.html) (MathWorks 공식 관성 센서 융합 및 MPU-9250 기반 자세 추정 예제)
+### 공식 문서 (Official Documentation)
 
-- **학술 연구 강의 노트 (Web Links)**:
-  - [Stanford EE267 Notes: IMU & Orientation Tracking](https://web.stanford.edu/class/ee267/notes/notes_imu.pdf) (Stanford 대학교 EE267 가속도/자력/자이로 3-DOF 정합 강의 노트)
+- MATLAB Magnetometer Calibration Guide  
+  https://kr.mathworks.com/help/fusion/ug/magnetometer-calibration.html
+
+- MATLAB Estimating Orientation Using Inertial Sensor Fusion  
+  https://kr.mathworks.com/help/fusion/ug/Estimating-Orientation-Using-Inertial-Sensor-Fusion-and-MPU-9250.html
+
+- MATLAB Understanding Sensor Fusion Lecture Series  
+  https://youtube.com/playlist?list=PLn8PRpmsu08rneZErjW_NIBs0Rl_vcgSw
+
+- MATLAB Understanding Kalman Filters  
+  https://kr.mathworks.com/videos/series/understanding-kalman-filters.html
+
+---
+
+### 대표 논문 (Key Papers)
+
+- Li, Q. & Griffiths, J. G. (2004).
+  Least Squares Ellipsoid Specific Fitting for Magnetometer Calibration.
+
+- Kok, M., Hol, J. D., & Schön, T. B. (2012).
+  An Optimization-Based Approach to Human Body Motion Capture Using Inertial Sensors.
+
+- Gebre-Egziabher, D., Elkaim, G. H., Powell, J. D., & Parkinson, B. W.
+  Calibration of Strapdown Magnetometers in Magnetic Field Domain.
+
+- Vasconcelos, J. F. et al.
+  Geometric Approach to Strapdown Magnetometer Calibration.
+
+---
+
+### 자세 추정 및 센서 융합
+
+- Stanford EE267 Notes – IMU & Orientation Tracking
+  https://web.stanford.edu/class/ee267/notes/notes_imu.pdf
+
+- Shuster, M. D.
+  A Survey of Attitude Representations.
+
+- Wahba, G.
+  A Least Squares Estimate of Satellite Attitude.
+
+- Davenport, P. B.
+  A Vector Approach to the Algebra of Rotations.
+
+- QUEST (Quaternion Estimator)
+
+- TRIAD (Tri-Axial Attitude Determination)
