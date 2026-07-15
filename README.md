@@ -12,8 +12,8 @@
 *   **원클릭 통합 보정 및 펌웨어 실시간 이식**:
     *   [integrated_calibration.py](file:///d:/바탕화면/CS-Study-Tracker/IMU/calibration_tool/integrated_calibration.py) 실행을 통해 가속도계 12-parameter LS 피팅, 자이로 Global 오프셋 바이어스, 자력계 Task-Aware 최적화 및 5대 지표 대조 모델 자동 낙찰을 순차적으로 수행합니다.
     *   도출된 최종 교정 파라미터는 펌웨어 컴파일 디렉토리의 [calib_params.h](file:///d:/바탕화면/CS-Study-Tracker/IMU/firmware/calibrated/calibration/calib_params.h) 헤더 파일로 실시간 즉시 이식되어 펌웨어 빌드 툴체인과 자동 정합됩니다.
-*   **환경 지자기 매핑 폐기 및 인천 복각 표준 절대 고정**:
-    *   공간 왜곡에 따른 3D 자북 지도 생성 단계를 소거하고, 대한민국 인천의 표준 지자기 복각 상수 벡터($m_{ned\_ref} = [0.583503, 0.0, 0.812108]$)를 절대 자세 추정기([static_initialization.py](file:///d:/바탕화면/CS-Study-Tracker/IMU/orientation_tracking/static_initialization.py))의 절대 레퍼런스로 고정 인가합니다.
+*   **인천 복각 표준 절대 레퍼런스 고정 적용**:
+    *   공간 왜곡에 따른 Heading 불확실성을 원천 차단하기 위해 대한민국 인천의 표준 지자기 복각 상수 벡터($m_{ned\_ref} = [0.583503, 0.0, 0.812108]$)를 절대 자세 추정기([static_initialization.py](file:///d:/바탕화면/CS-Study-Tracker/IMU/orientation_tracking/static_initialization.py))의 절대 레퍼런스로 고정 인가하여 정합합니다.
 *   **고속 Binary 패킷 프로토콜**:
     *   ASCII 전송 및 문자열 파싱 부하 차단 ➔ 39-Byte raw binary 패킷 구조를 확립했습니다.
     *   `[START (0xAA)] + [Payload (Float 9축 데이터 36 Bytes)] + [XOR Checksum] + [END (0x55)]`
