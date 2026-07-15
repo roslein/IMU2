@@ -21,3 +21,6 @@
         - 4. CP949 이모지 인코딩 충돌 방지: 모든 Python 수집 유틸 및 분석 스크립트 최상단에 sys.stdout.reconfigure(encoding='utf-8') 구문을 상시 기재할 것.
         - 5. COM 포트 Permission Error 13: 외부 시리얼 모니터 점유 충돌 시의 센서 물리 리셋 및 강제 종료 예외 탈출 분기를 data_collection 및 static_initialization 에 상설 기재할 것.
         - 6. 아두이노 CLI 빌드 자동화: 로컬 빌드 툴체인(D:/arduino-cli/arduino-cli.exe) 및 FQBN(esp32:esp32:esp32thing_plus_c)을 사용하여 COM3 포트에 펌웨어를 직접 컴파일/업로드할 수 있도록 환경을 연동함.
+        - 7. 240포인트 9축 통합 데이터셋 구성: 20면 지그 각 안착 지점에서 수평판을 30도 간격(12개 눈금)으로 회전하는 데카르트 곱(20x12=240포인트) 데이터를 단일 스트림으로 수집하며, 각 포인트당 1.5초(150샘플) LPF 평균을 계산하여 'collected_data_9axis.npz'에 acc, mag, gyro, yaw_gt 배열로 동시 바인딩 백업할 것.
+        - 8. C++ 보정 헤더 실시간 연계: integrated_calibration.py 가 최종 최적화 낙찰 모델(3p/6p/9p)에 무관하게 MAG_W(3x3) 및 MAG_B(3x1) 보정 계수를 calibrated.ino 컴파일 경로 하위인 'calib_params.h'에 실시간 덮어쓰기 이식하므로 펌웨어 물리 소스 수정 없이 컴파일/배포 체계를 일원화하여 유지할 것.
+

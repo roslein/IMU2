@@ -76,6 +76,15 @@
 *   유형: [패턴]
 *   내용: 외부 자이로 바이어스 파라미터 파일 로드 의존성을 제거하고, 0도 최초 거치 안착 엔터 키 입력 시점에 수집된 100샘플 자이로 데이터의 롤링 평균값을 활용해 실시간으로 gyro_bias를 갱신 적용함으로써 온도 조건 변화에 따른 정적 적분 드리프트를 완벽하게 상쇄함.
 
+*   ID: MISTAKE-IMU-04
+*   유형: [MISTAKE]
+*   내용: Task-Aware 2-Stage 최적화 시, Scipy least_squares 탐색 과정에서 지수(exp) 스케일 계수가 한계치 이상으로 발산하여 np.exp() 오버플로우 발생 ➔ SVD 연산 모듈에 NaN/inf 데이터가 강제 유입되어 `numpy.linalg.LinAlgError: SVD did not converge` 예외로 프로그램이 크래시되는 병목이 발생함.
+
+*   ID: PATTERN-IMU-05
+*   유형: [패턴]
+*   내용: 최적화 파라미터 W 연산 시 `np.clip(p[3:6], -10.0, 10.0)` 방어 코드를 적용해 지수 발산을 사전 차단하고, SVD 입력값(m_cal 및 q_est)의 NaN/inf 여부를 검사하여 예외 감지 즉시 최적화 잔차에 최대 페널티 값(180.0)을 인가해 강제 회피함으로써 SVD 컨버전스 크래시를 수학적으로 완벽히 회피함.
+
+
 *   **ID**: MISTAKE-IMU-04
 *   **유형**: [MISTAKE]
 *   **내용**: 하위 폴더의 파이썬 스크립트 실행 시 부모 경로(IMU/)가 sys.path에 수동 등록되어 있지 않으면, imu_core와 같은 로컬 패키지를 찾지 못하고 ModuleNotFoundError 크래시 발생함. 상호 패키지 참조를 하는 모든 신규 툴 상단에는 반드시 SCRIPT_DIR와 IMU_ROOT 경로 탐색 가드를 선행 셋업해야 함.
