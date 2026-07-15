@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R_scipy
+from scipy.optimize import least_squares
 import imu_core.constants as const
 import imu_core.icosahedron as icosahedron
 
@@ -137,3 +138,212 @@ def slice_window_statistics(raw_data: np.ndarray, window_size: int) -> np.ndarra
         slice_mean = np.mean(raw_data[start : start + window_size], axis=0)
         slices.append(slice_mean)
     return np.array(slices)
+
+# ==============================================================================
+# 🎯 9축 센서 모듈화 피팅 솔버 (Calibration Solvers)
+# ==============================================================================
+
+def calibrate_acc_12param_icosahedron(d: np.ndarray, normals: np.ndarray, max_iter: int = 50) -> tuple:
+    """
+    정20면체 12-parameter 가속도계 경사보상 Recursive 최소제곱 솔버
+    d: 실측된 20개 정적 평균 가속도 벡터 (20, 3)
+    normals: 정20면체의 이론적 20개 면 법선 벡터 (20, 3)
+    반환: W_est (3x3 보정행렬), b_est (3x1 오프셋), alpha (Pitch경사), beta (Roll경사)
+    """
+    n_points = len(d)
+    matched_normals = np.zeros_like(d)
+    
+    for i in range(n_points):
+        best_idx, _ = icosahedron.match_face(-d[i], normals)
+        matched_normals[i] = normals[best_idx]
+        
+    W_est = np.eye(3)
+    b_est = np.zeros(3)
+    alpha, beta = 0.0, 0.0
+    
+    for iteration in range(max_iter):
+        R_tilt = R_scipy.from_euler('yx', [beta, alpha]).as_matrix()
+        g_ref = -(R_tilt @ matched_normals.T).T
+        A = np.hstack([g_ref, np.ones((n_points, 1))])
+        
+        sol, _, _, _ = np.linalg.lstsq(A, d, rcond=None)
+        M_T = sol[:3, :]
+        b_new = sol[3, :]
+        
+        W_new = np.linalg.inv(M_T.T)
+        d_cal = (W_new @ (d - b_new).T).T
+        
+        pitch_errs = []
+        roll_errs = []
+        for i in range(n_points):
+            ref = matched_normals[i]
+            cal = d_cal[i] / np.linalg.norm(d_cal[i])
+            pitch_errs.append(cal[1] - ref[1])
+            roll_errs.append(cal[0] - ref[0])
+            
+        alpha = np.arcsin(np.clip(np.mean(pitch_errs), -1.0, 1.0))
+        beta = np.arcsin(np.clip(np.mean(roll_errs), -1.0, 1.0))
+        
+        if np.allclose(b_est, b_new, atol=1e-8):
+            W_est, b_est = W_new, b_new
+            break
+        W_est, b_est = W_new, b_new
+        
+    return W_est, b_est, alpha, beta
+
+
+def calibrate_mag_3param(mag_raw: np.ndarray) -> tuple:
+    """3-parameter 자력계 오프셋 피팅 (W_mag는 스케일 역수 Identity 고정)"""
+    mean_raw = np.mean(mag_raw, axis=0)
+    dev_norms = np.linalg.norm(mag_raw - mean_raw, axis=1)
+    scale_factor = np.mean(dev_norms) if np.mean(dev_norms) > 0 else 1.0
+    d = (mag_raw - mean_raw) / scale_factor
+    
+    def residuals(b, x):
+        return np.linalg.norm(x - b, axis=1) - 1.0
+    p0 = np.array([0.0, 0.0, 0.0])
+    res = least_squares(residuals, p0, args=(d,), method='lm')
+    
+    b_est = mean_raw + scale_factor * res.x
+    W_est = np.eye(3) / scale_factor
+    return W_est, b_est
+
+
+def calibrate_mag_6param(mag_raw: np.ndarray) -> tuple:
+    """6-parameter 자력계 대각 스케일링 + 오프셋 피팅"""
+    mean_raw = np.mean(mag_raw, axis=0)
+    dev_norms = np.linalg.norm(mag_raw - mean_raw, axis=1)
+    scale_factor = np.mean(dev_norms) if np.mean(dev_norms) > 0 else 1.0
+    d = (mag_raw - mean_raw) / scale_factor
+
+    def residuals(p, x):
+        b = p[:3]
+        W = np.diag(np.exp(p[3:6]))
+        cal = (W @ (x - b).T).T
+        return np.linalg.norm(cal, axis=1) - 1.0
+    p0 = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    res = least_squares(residuals, p0, args=(d,), method='lm')
+    
+    p = res.x
+    b_est = mean_raw + scale_factor * p[:3]
+    W_est = np.diag(np.exp(p[3:6])) / scale_factor
+    return W_est, b_est
+
+
+def calibrate_mag_ellipsoid(mag_raw: np.ndarray) -> tuple:
+    """9-parameter 자력계 대칭 타원체(Soft/Hard Iron) 피팅"""
+    mean_mag = np.mean(mag_mag_raw := mag_raw, axis=0)
+    mag_norms = np.linalg.norm(mag_mag_raw - mean_mag, axis=1)
+    avg_radius = np.mean(mag_norms) if np.mean(mag_norms) > 0 else 1.0
+    init_scale = 1.0 / avg_radius
+    
+    def residuals(p, d):
+        b = p[:3]
+        W = np.array([
+            [p[3], p[4], p[5]],
+            [p[4], p[6], p[7]],
+            [p[5], p[7], p[8]]
+        ])
+        cal = (W @ (d - b).T).T
+        return np.linalg.norm(cal, axis=1) - 1.0
+        
+    p0 = np.concatenate([
+        mean_mag, 
+        [init_scale, 0.0, 0.0, init_scale, 0.0, init_scale]
+    ])
+    
+    res = least_squares(residuals, p0, args=(mag_raw,), method='lm')
+    p = res.x
+    b_est = p[:3]
+    W_est = np.array([
+        [p[3], p[4], p[5]],
+        [p[4], p[6], p[7]],
+        [p[5], p[7], p[8]]
+    ])
+    
+    return W_est, b_est
+
+
+def calibrate_gyro_bias_global(gyro_raw: np.ndarray) -> np.ndarray:
+    """20-Positions (또는 240포인트) 전체 자이로 데이터 참 평균을 통한 정적 오프셋 도출"""
+    return np.mean(gyro_raw, axis=0)
+
+
+def calibrate_mag_task_aware(mag_raw: np.ndarray, acc_cal: np.ndarray, yaw_gt: np.ndarray, 
+                             W_mag_0: np.ndarray, b_mag_0: np.ndarray, 
+                             m_ned_ref: np.ndarray = None, mode: int = 9) -> tuple:
+    """
+    Stage 2: 수평 회전판의 Yaw GT 각도 편차 자체를 최소화하는 Task-Aware 비선형 최적화 솔버
+    mode: 3 (Offset Only), 6 (Diagonal W), 9 (Symmetric W)
+    """
+    if m_ned_ref is None:
+        # 인천 표준 복각 54.3도 기준 디폴트 레퍼런스
+        m_ned_ref = np.array([0.583503, 0.0, 0.812108])
+
+    # 1. 최적화 변수 초기값 구성
+    if mode == 3:
+        p0 = b_mag_0.copy()
+    elif mode == 6:
+        # log(diag(W)) 적용하여 양수 제약 강제
+        diag_val = np.diag(W_mag_0)
+        diag_val = np.where(diag_val <= 0, 1e-5, diag_val)
+        p0 = np.concatenate([b_mag_0, np.log(diag_val)])
+    else: # mode == 9
+        p0 = np.concatenate([
+            b_mag_0, 
+            [W_mag_0[0,0], W_mag_0[0,1], W_mag_0[0,2], W_mag_0[1,1], W_mag_0[1,2], W_mag_0[2,2]]
+        ])
+
+    # 2. 잔차 함수 정의
+    def residuals(p, m_raw, a_cal, y_gt, ref_vec):
+        if mode == 3:
+            b = p[:3]
+            W = W_mag_0
+        elif mode == 6:
+            b = p[:3]
+            W = np.diag(np.exp(p[3:6]))
+        else: # mode == 9
+            b = p[:3]
+            W = np.array([
+                [p[3], p[4], p[5]],
+                [p[4], p[6], p[7]],
+                [p[5], p[7], p[8]]
+            ])
+            
+        n_points = len(m_raw)
+        errors = []
+        for i in range(n_points):
+            m_cal = W @ (m_raw[i] - b)
+            # SVD 절대 자세 복조 q = [qw, qx, qy, qz]
+            q_est = align_vectors_svd(a_cal[i], m_cal, ref_vec)
+            # scipy quaternion [qx, qy, qz, qw] 정렬
+            res_rot = R_scipy.from_quat([q_est[1], q_est[2], q_est[3], q_est[0]])
+            yaw_est = res_rot.as_euler('xyz', degrees=True)[2]
+            
+            # Wraparound 360도 보정한 각도 편차
+            diff = (yaw_est - y_gt[i] + 180.0) % 360.0 - 180.0
+            errors.append(diff)
+            
+        return np.array(errors)
+
+    # 3. 비선형 최적화 구동
+    res = least_squares(residuals, p0, args=(mag_raw, acc_cal, yaw_gt, m_ned_ref), method='trf')
+    
+    # 4. 결과 파라미터 복원
+    p_opt = res.x
+    if mode == 3:
+        b_final = p_opt[:3]
+        W_final = W_mag_0
+    elif mode == 6:
+        b_final = p_opt[:3]
+        W_final = np.diag(np.exp(p_opt[3:6]))
+    else: # mode == 9
+        b_final = p_opt[:3]
+        W_final = np.array([
+            [p_opt[3], p_opt[4], p_opt[5]],
+            [p_opt[4], p_opt[6], p_opt[7]],
+            [p_opt[5], p_opt[7], p_opt[8]]
+        ])
+        
+    return W_final, b_final
+
