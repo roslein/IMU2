@@ -1,8 +1,9 @@
 """
 Real-world IMU Phase 2 Data Collection (data_collection.py)
 목적: 사용자가 임의의 면을 거치하면 실시간으로 감지하고 중복을 확인하여 수집하며,
-      수집 순서에 관계없이 0~19번 면 순서로 정렬된 (20, 12, 3) 3D 배열 데이터를 적립한 뒤
-      최종 (240, 3) 형태로 플래팅하여 호환성을 유지 저장합니다.
+      각 면마다 13눈금(0~360도, 30도 간격)을 수집합니다.
+      최종 완료 시, 보정용(240포인트, 12눈금) 데이터와 Closed-loop 평가용(260포인트, 13눈금 전체) 데이터를
+      이원화하여 저장하는 Dual-Save 아키텍처를 구현합니다.
 """
 
 import serial
@@ -218,11 +219,11 @@ def main():
         print(f"❌ 포트 연결 실패: {e}")
         sys.exit(1)
         
-    # (20, 12, 3) 3D 구조 데이터셋 초기화
-    collected_acc = np.zeros((20, 12, 3))
-    collected_mag = np.zeros((20, 12, 3))
-    collected_gyro = np.zeros((20, 12, 3))
-    collected_yaw_gt = np.zeros((20, 12))
+    # (20, 13, 3) 3D 구조 데이터셋 초기화 (0~360도 총 13눈금)
+    collected_acc = np.zeros((20, 13, 3))
+    collected_mag = np.zeros((20, 13, 3))
+    collected_gyro = np.zeros((20, 13, 3))
+    collected_yaw_gt = np.zeros((20, 13))
     
     completed_faces = set()
     
@@ -232,19 +233,23 @@ def main():
         os.makedirs(output_dir)
         
     final_save_path = os.path.join(output_dir, "collected_data_9axis.npz")
+    closed_loop_save_path = os.path.join(output_dir, "collected_data_9axis_closed_loop.npz")
     
     # 백업 처리
-    if os.path.exists(final_save_path):
-        try:
-            mtime = os.path.getmtime(final_save_path)
-            time_struct = time.localtime(mtime)
-            timestamp_str = time.strftime("%Y%m%d_%H%M%S", time_struct)
-            backup_name = f"collected_data_9axis_backup_{timestamp_str}.npz"
-            backup_path = os.path.join(output_dir, backup_name)
-            os.rename(final_save_path, backup_path)
-            print(f"\n📁 [자동 백업] 기존 완성본 감지 ➔ 백업 완료: output/{backup_name}")
-        except Exception as e:
-            print(f"\n⚠️ 기존 데이터 백업 실패: {e}")
+    for path in [final_save_path, closed_loop_save_path]:
+        if os.path.exists(path):
+            try:
+                mtime = os.path.getmtime(path)
+                time_struct = time.localtime(mtime)
+                timestamp_str = time.strftime("%Y%m%d_%H%M%S", time_struct)
+                filename = os.path.basename(path)
+                name, ext = os.path.splitext(filename)
+                backup_name = f"{name}_backup_{timestamp_str}{ext}"
+                backup_path = os.path.join(output_dir, backup_name)
+                os.rename(path, backup_path)
+                print(f"\n📁 [자동 백업] 기존 파일 감지 ➔ 백업 완료: output/{backup_name}")
+            except Exception as e:
+                print(f"\n⚠️ 기존 데이터 백업 실패: {e}")
             
     checkpoint_path = os.path.join(output_dir, "checkpoint_data_9axis.npz")
     if os.path.exists(checkpoint_path):
@@ -271,7 +276,7 @@ def main():
     update_3d_plot(completed_faces, normals)
     
     print("\n💡 사용자가 임의로 거치한 면을 자동 식별하여 수집합니다.")
-    print("💡 총 20개 면에 대해 각각 12개 눈금(총 240포인트)을 완료해야 합니다.\n")
+    print("💡 각 면마다 0도부터 360도까지 13개 눈금(총 260포인트)을 수집합니다.\n")
     
     try:
         import msvcrt
@@ -314,14 +319,14 @@ def main():
                     key = msvcrt.getch()
                     if key in [b'\r', b' ', b'\n']:
                         if is_ready and detected_face_idx is not None:
-                            print(f"\n👉 면 #{detected_face_idx:02d} 선택 완료! 12눈금(Yaw) 수집 시퀀스 진입.")
+                            print(f"\n👉 면 #{detected_face_idx:02d} 선택 완료! 13눈금(Yaw) 수집 시퀀스 진입.")
                             break
                         else:
                             print("\n⚠️ 수집할 수 없는 면(이미 완료됨)이거나 감지되지 않았습니다.")
                 time.sleep(0.01)
                 
-            # 해당 면에 대해 12눈금 순차 수집 진행
-            for yaw_idx in range(12):
+            # 해당 면에 대해 13눈금(0~360도) 순차 수집 진행
+            for yaw_idx in range(13):
                 yaw_target_deg = yaw_idx * 30.0
                 print(f"\n👉 [눈금 수집] 면 #{detected_face_idx:02d} | 회전판 눈금: {yaw_target_deg:.1f}°")
                 print("📡 회전판 눈금을 정밀 조정하여 정지한 후 [Space] 또는 [Enter] 키를 누르십시오...")
@@ -369,7 +374,7 @@ def main():
                 except Exception as e:
                     print(f"   ⚠️ 체크포인트 백업 에러: {e}")
                     
-            # 12눈금 수집 완료 후 완료 셋에 추가 및 리렌더링
+            # 13눈금 수집 완료 후 완료 셋에 추가 및 리렌더링
             completed_faces.add(detected_face_idx)
             update_3d_plot(completed_faces, normals)
             
@@ -384,20 +389,34 @@ def main():
             except Exception as e:
                 pass
                 
-        # 20개 면 완료 시 최종 flattening 240포인트 구조로 변환하여 보존
-        acc_flat = collected_acc.reshape(240, 3)
-        mag_flat = collected_mag.reshape(240, 3)
-        gyro_flat = collected_gyro.reshape(240, 3)
-        yaw_gt_flat = collected_yaw_gt.reshape(240)
+        # 20개 면 완료 시 [Dual-Save 기동]
+        # 1. 보정용 데이터 (13번째 360도 눈금 제외 ➔ 240포인트)
+        acc_calib = collected_acc[:, :12, :].reshape(240, 3)
+        mag_calib = collected_mag[:, :12, :].reshape(240, 3)
+        gyro_calib = collected_gyro[:, :12, :].reshape(240, 3)
+        yaw_gt_calib = collected_yaw_gt[:, :12].reshape(240)
         
         np.savez(final_save_path, 
-                 acc=acc_flat, 
-                 mag=mag_flat, 
-                 gyro=gyro_flat, 
-                 yaw_gt=yaw_gt_flat)
+                 acc=acc_calib, 
+                 mag=mag_calib, 
+                 gyro=gyro_calib, 
+                 yaw_gt=yaw_gt_calib)
         
-        print("\n🎉 [대성공] 20면 x 12눈금 = 240개 9축 통합 데이터셋 정렬 수집 완료!")
-        print(f"📁 최종 저장 경로: {final_save_path}\n")
+        # 2. Closed-loop 평가용 데이터 (13눈금 전체 포함 ➔ 260포인트)
+        acc_cl = collected_acc.reshape(260, 3)
+        mag_cl = collected_mag.reshape(260, 3)
+        gyro_cl = collected_gyro.reshape(260, 3)
+        yaw_gt_cl = collected_yaw_gt.reshape(260)
+        
+        np.savez(closed_loop_save_path,
+                 acc=acc_cl,
+                 mag=mag_cl,
+                 gyro=gyro_cl,
+                 yaw_gt=yaw_gt_cl)
+        
+        print("\n🎉 [대성공] 20면 x 13눈금 = 260개 9축 통합 데이터셋 자율 수집 완료!")
+        print(f"📁 [저장완료] 보정용 240포인트 ➔ {final_save_path}")
+        print(f"📁 [저장완료] 평가용 260포인트 ➔ {closed_loop_save_path}\n")
         
         if os.path.exists(checkpoint_path):
             try:
