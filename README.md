@@ -2,15 +2,21 @@
 
 본 프로젝트는 정20면체 지그 및 수평 회전판을 활용하여 실물 고성능 MEMS 관성/자기 센서(ISM330DHCX & MMC5983MA)의 정밀 캘리브레이션 및 쿼터니언 기반 정적 무회전 3D 자세 추정(Orientation Tracking)을 수행하는 통합 개발 시스템입니다.
 
-> [!IMPORTANT]
-> **필수 의존성**
-> 본 프로젝트는 다음 라이브러리를 기반으로 구현되었습니다. 실행 전 모두 설치되어 있어야 합니다.
->
-> - Python 3.10 이상
-> - NumPy
-> - SciPy (`optimize`, `spatial.transform`)
-> - OpenCV
-> - Matplotlib
+## 📋 1. Requirements & Prerequisites (필수 요구 사양 및 의존성)
+
+### 1.1 하드웨어 명세 (Hardware Requirements)
+| 장치/모듈명 | 역할 및 기능 | 물리적 사양 및 CAD 링크 |
+| --- | --- | --- |
+| ESP32 Thing Plus C | 메인 제어 및 센서 HAL, 100Hz 바이너리 스트리밍 송출 | [SparkFun ESP32 Thing Plus - C](https://www.sparkfun.com/products/18029) |
+| ISM330DHCX | 6DoF 관성 센서 (가속도 및 자이로 LSB 계측) | I2C 인터페이스 (0x6B) |
+| MMC5983MA | 3축 지자기 센서 (자기장 LSB 계측, Z축 부호 반전 정렬) | I2C 인터페이스 (0x30) |
+| 정20면체 캘리브레이션 지그 | 20 Positions 자율 안착 수집용 3D CAD STL 규격 | [cad/sensor_20_v1.stl](cad/sensor_20_v1.stl) |
+| 정6면체 보정 지그 | 6 Positions 단순 보조 수집용 3D CAD STL 규격 | [cad/sensor_6_v1.stl](cad/sensor_6_v1.stl) |
+
+### 1.2 소프트웨어 의존성 (Software Dependencies)
+- Python 3.10 이상 (NumPy, SciPy, OpenCV, Matplotlib)
+- Arduino IDE 및 Arduino CLI (ESP32 Board Package v3.x)
+- 외부 의존 아두이노 라이브러리: `SparkFun_ISM330DHCX`, `SparkFun_MMC5983MA_Arduino_Library`
 
 ## 1. 상황
 
